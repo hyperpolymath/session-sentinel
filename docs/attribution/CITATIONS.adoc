@@ -1,0 +1,35 @@
+= Session Sentinel - Citation Guide
+:toc:
+
+== BibTeX
+
+[source,bibtex]
+----
+@software{Session Sentinel_2026,
+  author = {{{AUTHOR_LAST}}, {{AUTHOR_FIRST}}},
+  title = {Session Sentinel},
+  year = {2026},
+  url = {https://github.com/hyperpolymath/Session Sentinel},
+  license = {PMPL-1.0-or-later}
+}
+----
+
+== Harvard Style
+
+{{AUTHOR_LAST}}, {{AUTHOR_INITIALS}} (2026) _Session Sentinel_ [Computer software]. Available at: https://github.com/hyperpolymath/Session Sentinel
+
+== OSCOLA
+
+Jonathan D.A. Jewell, 'Session Sentinel' (2026) <https://github.com/hyperpolymath/Session Sentinel>
+
+== MLA
+
+{{AUTHOR_LAST}}, {{AUTHOR_FIRST}} "Session Sentinel." 2026, github.com/hyperpolymath/Session Sentinel.
+
+== APA 7
+
+{{AUTHOR_LAST}}, {{AUTHOR_INITIALS}} (2026). _Session Sentinel_ [Computer software]. GitHub. https://github.com/hyperpolymath/Session Sentinel
+
+== See Also
+
+* link:CITATION.cff[CITATION.cff]

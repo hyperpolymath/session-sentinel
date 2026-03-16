@@ -1,0 +1,87 @@
+# STOP - CRITICAL READING REQUIRED
+
+**THIS FILE MUST BE READ FIRST BY ALL AI AGENTS**
+
+## WHAT IS THIS?
+
+This is the AI manifest for **Session Sentinel** — a multi-AI session health monitor with system tray, self-healing, fault tolerance, self-diagnostics, and PanLL panel integration.
+
+## CANONICAL LOCATIONS (UNIVERSAL RULE)
+
+### Machine-Readable Metadata: `.machine_readable/` ONLY
+
+These 6 a2ml files MUST exist in `.machine_readable/` directory ONLY:
+1. **STATE.a2ml** - Project state, progress, blockers
+2. **META.a2ml** - Architecture decisions, governance
+3. **ECOSYSTEM.a2ml** - Position in ecosystem, relationships
+4. **AGENTIC.a2ml** - AI agent interaction patterns
+5. **NEUROSYM.a2ml** - Neurosymbolic integration config
+6. **PLAYBOOK.a2ml** - Operational runbook
+
+**CRITICAL:** If ANY of these files exist in the root directory, this is an ERROR.
+
+### Source Code Layout
+
+```
+session-sentinel/
+├── src/core/              # AffineScript (.as) — business logic
+│   ├── config.as          # Configuration system + provider definitions
+│   ├── scanner.as         # Multi-AI storage scanner
+│   ├── health.as          # Health zone classification + trend analysis
+│   ├── healer.as          # Self-healing engine
+│   ├── diagnostics.as     # Self-diagnostics + watchdog
+│   ├── monitor.as         # Main monitoring loop
+│   └── providers.as       # AI provider detection + registration
+├── src/interface/abi/     # Idris2 — formally verified specifications
+│   ├── HealthState.idr    # Health zone state machine with proofs
+│   ├── MonitorProtocol.idr # Monitor command/response protocol
+│   └── PanelProtocol.idr  # PanLL panel communication protocol
+├── src/interface/ffi/     # Zig — native platform integration
+│   ├── build.zig          # Build configuration
+│   └── src/
+│       ├── main.zig       # Entry point + CLI + signal handling
+│       ├── tray.zig       # KDE StatusNotifierItem (system tray)
+│       ├── dbus.zig       # DBus abstraction layer
+│       ├── icons.zig      # Dynamic SVG icon generation
+│       └── watchdog.zig   # Watchdog + fault tolerance
+├── src/panels/            # PanLL panel
+│   └── manifest.json      # Panel manifest (4 views)
+├── config/                # Default configuration
+│   └── session-sentinel.toml
+└── systemd/               # Boot activation
+    ├── session-sentinel.service
+    └── install.sh
+```
+
+### Language Roles
+
+| Language | Role | Directory |
+|----------|------|-----------|
+| AffineScript | Core logic (affine types, effects, dependent types) | `src/core/` |
+| Idris2 | ABI specifications (proofs, state machines) | `src/interface/abi/` |
+| Zig | FFI implementation (system tray, DBus, native) | `src/interface/ffi/` |
+| JSON | PanLL panel manifest | `src/panels/` |
+| TOML | Configuration | `config/` |
+
+## CORE INVARIANTS
+
+1. **No state file duplication** — Root must NOT contain STATE.a2ml, META.a2ml, etc.
+2. **Single source of truth** — `.machine_readable/` is authoritative
+3. **License consistency** — All code PMPL-1.0-or-later
+4. **Author attribution** — Always "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
+5. **Container images** — MUST use Chainguard base
+6. **Container runtime** — Podman, never Docker. Files are `Containerfile`, never `Dockerfile`
+7. **No banned patterns** — No believe_me, assert_total, sorry, unsafeCoerce in any language
+8. **Multi-AI design** — All features work for any AI provider, not just Claude
+9. **Proven alternatives** — Check proven-servers for formally verified alternatives before writing new code
+10. **Panels not panes** — PanLL uses "panels", never "panes"
+
+## SESSION STARTUP CHECKLIST
+
+Read THIS file (0-AI-MANIFEST.a2ml) first
+Understand canonical location: `.machine_readable/`
+State understanding of canonical locations
+
+## ATTESTATION PROOF
+
+**"I have read the AI manifest. All machine-readable content (state files, anchors, policies, bot directives, contractiles, AI guides) is located in `.machine_readable/` ONLY, and community metadata is in `.github/`. I will not create duplicate files in the root directory."**

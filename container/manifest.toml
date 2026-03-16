@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+#
+# Cerro Torre manifest for Session Sentinel .ctp bundle
+#
+# This manifest describes the container image for verified
+# container packaging. Used by `ct pack` to create .ctp bundles.
+
+[metadata]
+name = "session-sentinel"
+version = "0.1.0"
+revision = 1
+summary = "{{PROJECT_DESCRIPTION}}"
+description = """
+Session Sentinel — containerised service packaged as a verified
+cerro-torre .ctp bundle with Ed25519 signing and full provenance
+tracking.
+"""
+license = "PMPL-1.0-or-later"
+homepage = "https://github.com/hyperpolymath/session-sentinel"
+maintainer = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
+
+[provenance]
+upstream = "https://github.com/hyperpolymath/session-sentinel"
+import_date = 2026-03-16T00:00:00Z
+
+[dependencies]
+runtime = ["ca-certificates", "curl"]
+build = []
+
+[build]
+system = "podman"
+
+[build.environment]
+APP_HOST = "[::]"
+APP_PORT = "9847"
+
+[outputs]
+primary = "session-sentinel"
+split = []
+
+[attestations]
+require = ["source-signature", "sbom-complete"]
+recommend = ["security-audit", "reproducible-build"]
+
+# Runtime security profile
+[security]
+user = "appuser"
+group = "appuser"
+read_only_root = false
+no_new_privileges = true
+
+[security.capabilities]
+drop = ["ALL"]
+add = ["NET_BIND_SERVICE"]
+
+[security.network]
+listen_tcp = [9847]
+
+[security.filesystem]
+read = ["/app/", "/data/"]
+write = ["/data/", "/tmp/"]
+execute = ["/app/entrypoint.sh"]

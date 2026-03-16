@@ -1,0 +1,166 @@
+= Session Sentinel
+:toc: preamble
+:icons: font
+
+[TIP]
+====
+**AI-Assisted Install:** Just tell any AI assistant: +
+`Set up session-sentinel from https://github.com/hyperpolymath/session-sentinel` +
+The AI reads the manifest, asks you a few questions, and handles everything.
+====
+
+== Overview
+
+**Multi-AI session health monitor with system tray, self-healing, and PanLL panel.**
+
+Session Sentinel watches storage consumption across multiple AI tools (Claude, Copilot, Ollama, LM Studio, Continue.dev, Cursor, Aider, and custom providers), provides real-time health status via a KDE system tray icon, automatically cleans up stale sessions, and exposes a PanLL panel for fine-grained analysis and control.
+
+=== Health Zones
+
+[cols="1,1,2,2"]
+|===
+| Zone | Color | Threshold (default) | Action
+
+| **Green**
+| Green shield
+| < 200 MB total
+| Healthy — no action needed
+
+| **Yellow**
+| Amber shield
+| 200-500 MB
+| Watch — prune orphans and empty dirs
+
+| **Red**
+| Red shield
+| 500-800 MB
+| Action needed — prune stale conversations and subagents
+
+| **Purple**
+| Flashing purple shield
+| >= 800 MB
+| Critical — aggressive cleanup, everything older than 1 day
+|===
+
+== Architecture
+
+Session Sentinel follows the hyperpolymath **ABI/FFI standard**:
+
+* **ABI (Idris2):** `src/interface/abi/*.idr` — Formally verified health state machine, monitor protocol, panel protocol. Dependent types prove threshold ordering and state transition validity.
+* **Core (AffineScript):** `src/core/*.as` — Business logic with affine types for resource safety. Effects-tracked IO, state management, self-healing engine.
+* **FFI (Zig):** `src/interface/ffi/src/*.zig` — Native KDE StatusNotifierItem via DBus, icon generation, watchdog, systemd integration. Zero runtime dependencies.
+* **Panel (PanLL):** `src/panels/manifest.json` — Real-time health dashboard with trend graphs, threshold tuning, and diagnostic viewer.
+
+=== Key Properties
+
+* **Self-healing:** Automatically prunes orphan files, stale conversations, and empty directories based on health zone.
+* **Fault-tolerant:** Watchdog monitors scan health; 3 consecutive failures enter degraded mode; automatic recovery with exponential backoff.
+* **Self-diagnostic:** Tracks disk space, memory pressure, AI process status, storage growth rate, and healing effectiveness.
+* **Multi-AI:** Detects and monitors Claude, Copilot, Ollama, LM Studio, Continue.dev, Cursor, Aider — extensible via config for any AI tool.
+* **Boot activation:** Systemd user service starts with graphical session, watchdog-integrated.
+
+== Quick Start
+
+[source,bash]
+----
+# Build
+just build
+
+# Install binary + systemd service + default config
+just install
+./systemd/install.sh
+
+# Start on boot
+systemctl --user start session-sentinel.service
+
+# Manual single scan
+session-sentinel-tray --once
+
+# Open PanLL panel
+# (via system tray right-click -> "Open Panel")
+----
+
+== Configuration
+
+Default config installed to `~/.config/session-sentinel/config.toml`.
+
+[source,bash]
+----
+# Edit thresholds, add providers, tune healing policy
+$EDITOR ~/.config/session-sentinel/config.toml
+
+# Reload without restart
+systemctl --user reload session-sentinel.service
+# (or send SIGHUP)
+----
+
+See link:config/session-sentinel.toml[config/session-sentinel.toml] for all options with documentation.
+
+== PanLL Panel
+
+The panel provides four views:
+
+1. **Health Overview** — Current zone badge, key metrics, per-provider breakdown table
+2. **Storage Trends** — 7-day line chart of storage over time, zone prediction
+3. **Controls** — Force scan, trigger healing, tune thresholds via sliders, toggle auto-healing
+4. **Diagnostics** — Filterable log viewer, watchdog status, consecutive failure counter
+
+== DBus Interface
+
+Session Sentinel exposes `org.hyperpolymath.SessionSentinel1` on the session bus:
+
+[cols="1,2"]
+|===
+| Method | Description
+
+| `GetHealth`
+| Returns current health zone, metrics, and trend as JSON
+
+| `ForceHeal`
+| Triggers immediate healing cycle
+
+| `GetDiagnostics`
+| Returns diagnostic log entries
+
+| `GetHistory`
+| Returns historical health readings
+
+| `TuneThreshold(zone, bytes)`
+| Adjusts zone threshold at runtime
+|===
+
+Signals: `HealthChanged(zone, metrics_json)`, `HealingCompleted(result_json)`
+
+== Project Structure
+
+[cols="1,3"]
+|===
+| Directory | Purpose
+
+| `src/core/`
+| AffineScript core logic (scanner, health, healer, diagnostics, monitor)
+
+| `src/interface/abi/`
+| Idris2 ABI definitions (health states, protocols, proofs)
+
+| `src/interface/ffi/`
+| Zig FFI (system tray, DBus, icons, watchdog)
+
+| `src/panels/`
+| PanLL panel manifest and views
+
+| `config/`
+| Default configuration file
+
+| `systemd/`
+| Systemd service file and installer
+
+| `container/`
+| Stapeln container ecosystem (for server deployments)
+|===
+
+== License
+
+SPDX-License-Identifier: PMPL-1.0-or-later
+
+See link:LICENSE[LICENSE] and link:docs/legal/[docs/legal/] for details.

@@ -1,0 +1,142 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# Session Sentinel — Default Configuration
+# Copy to ~/.config/session-sentinel/config.toml and customize.
+
+[sentinel]
+# Scan interval in seconds (default: 300 = 5 minutes)
+scan_interval = 300
+
+# Enable automatic self-healing when thresholds are exceeded
+enable_self_healing = true
+
+# Enable continuous self-diagnostics
+enable_diagnostics = true
+
+# Enable flashing purple tray icon in critical zone
+enable_purple_flash = true
+
+# Log file path
+log_path = "~/.local/share/session-sentinel/sentinel.log"
+
+# PanLL panel unix socket path
+panel_socket = "/tmp/session-sentinel.panel.sock"
+
+# Heartbeat file for external health checks
+heartbeat_path = "/tmp/session-sentinel.heartbeat"
+
+# Maximum diagnostic log entries (ring buffer)
+max_diagnostic_entries = 1000
+
+# Trend history size (number of readings to retain)
+trend_history_size = 100
+
+# ─── Health Zone Thresholds (in bytes) ───────────────────────────────────────
+# Zone boundaries: Green < yellow_max < Red < purple_max
+# Storage below green_max   → Green  (healthy)
+# Storage below yellow_max  → Yellow (watch)
+# Storage below red_max     → Red    (action needed)
+# Storage at or above       → Purple (critical, flashing)
+
+[thresholds]
+green_max  = 209715200    # 200 MB
+yellow_max = 524288000    # 500 MB
+red_max    = 838860800    # 800 MB
+
+# ─── Self-Healing Policy ─────────────────────────────────────────────────────
+
+[healing]
+# Stale threshold: conversations older than this many days are eligible for cleanup
+stale_days = 3
+
+# In Yellow zone: only prune orphans and empty directories
+# In Red zone: also prune stale conversations and subagents
+# In Purple zone: aggressive — prune everything older than 1 day
+purple_stale_override_days = 1
+
+# Never delete conversations that are currently active (process check)
+protect_active_sessions = true
+
+# Dry-run mode: log what WOULD be cleaned without deleting
+dry_run = false
+
+# ─── AI Providers ────────────────────────────────────────────────────────────
+# Each provider has a name, storage paths to scan, and optional overrides.
+# Providers are auto-detected at startup; this config adds/overrides them.
+
+[[providers]]
+name = "Claude"
+storage_paths = ["~/.claude/projects/", "~/.claude/"]
+stale_days = 3
+# Claude-specific: parse JSONL conversations, detect orphan subagents
+provider_type = "claude"
+
+[[providers]]
+name = "GitHub Copilot"
+storage_paths = ["~/.config/github-copilot/"]
+stale_days = 7
+provider_type = "generic"
+
+[[providers]]
+name = "Ollama"
+storage_paths = ["~/.ollama/models/", "~/.ollama/"]
+stale_days = 30
+provider_type = "generic"
+# Ollama models are large but intentional — higher threshold
+weight = 0.1
+
+[[providers]]
+name = "LM Studio"
+storage_paths = ["~/.cache/lm-studio/"]
+stale_days = 14
+provider_type = "generic"
+
+[[providers]]
+name = "Continue.dev"
+storage_paths = ["~/.continue/"]
+stale_days = 7
+provider_type = "generic"
+
+[[providers]]
+name = "Cursor"
+storage_paths = ["~/.cursor/"]
+stale_days = 7
+provider_type = "generic"
+
+[[providers]]
+name = "Aider"
+storage_paths = ["~/.aider/"]
+stale_days = 7
+provider_type = "generic"
+
+# ─── Custom Provider Example ─────────────────────────────────────────────────
+# Uncomment and modify to add your own AI tool:
+#
+# [[providers]]
+# name = "My Custom AI"
+# storage_paths = ["~/.my-ai/cache/", "~/.my-ai/sessions/"]
+# stale_days = 5
+# provider_type = "generic"
+
+# ─── DBus Configuration ──────────────────────────────────────────────────────
+
+[dbus]
+bus_name = "org.hyperpolymath.SessionSentinel"
+object_path = "/org/hyperpolymath/SessionSentinel"
+interface = "org.hyperpolymath.SessionSentinel1"
+
+# ─── Watchdog Configuration ──────────────────────────────────────────────────
+
+[watchdog]
+# Number of consecutive scan failures before entering degraded mode
+degraded_threshold = 3
+
+# Number of consecutive failures before entering failed mode
+failed_threshold = 10
+
+# Maximum scan duration before watchdog considers it stuck (seconds)
+scan_timeout = 120
+
+# Systemd watchdog integration (requires Type=notify in service file)
+systemd_watchdog = true

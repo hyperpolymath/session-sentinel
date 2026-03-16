@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# Session Sentinel — systemd user service
+# Install: cp systemd/session-sentinel.service ~/.config/systemd/user/
+#          systemctl --user daemon-reload
+#          systemctl --user enable --now session-sentinel.service
+
+[Unit]
+Description=Session Sentinel — Multi-AI session health monitor
+Documentation=https://github.com/hyperpolymath/session-sentinel
+After=graphical-session.target dbus.service
+Wants=dbus.service
+PartOf=graphical-session.target
+
+# Only start if a graphical session is available (needs system tray)
+ConditionEnvironment=DISPLAY
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+Type=notify
+ExecStart=%h/.local/bin/session-sentinel-tray --daemon
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Self-healing: restart on failure with backoff
+Restart=on-failure
+RestartSec=5
+RestartMaxDelaySec=300
+RestartSteps=10
+
+# Watchdog: service must ping within this interval or systemd restarts it
+WatchdogSec=600
+
+# Resource limits — don't let the monitor itself become a problem
+MemoryMax=128M
+CPUQuota=10%
+
+# Graceful shutdown
+TimeoutStopSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Environment
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=SESSION_SENTINEL_CONFIG=%h/.config/session-sentinel/config.toml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=session-sentinel
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.config/session-sentinel %h/.local/share/session-sentinel /tmp/session-sentinel
+PrivateTmp=false
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+
+[Install]
+WantedBy=graphical-session.target
