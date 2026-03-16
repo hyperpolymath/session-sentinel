@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Clade declaration — part of the gv-clade-index registry
+# See: https://github.com/hyperpolymath/gv-clade-index
+
+[identity]
+uuid = "6db869e4-738b-5cef-9893-0c0de99ae71f"
+primary-forge = "github"
+primary-owner = "hyperpolymath"
+canonical-name = "session-sentinel"
+prefixed-name = "sc-session-sentinel"
+
+[clade]
+primary = "sc"
+secondary = []
+assigned = "2026-03-16"
+rationale = ""
+
+[forges]
+github = "hyperpolymath/session-sentinel"
+gitlab = "hyperpolymath/session-sentinel"
+bitbucket = "hyperpolymath/session-sentinel"
+
+[lineage]
+type = "standalone"
+parent = "Session security monitoring"
+born = "2026-03-16"
