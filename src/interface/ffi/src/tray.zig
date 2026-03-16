@@ -30,7 +30,7 @@ const icons = @import("icons.zig");
 
 /// Health zone derived from monitoring metrics.
 /// Determines the tray icon, tooltip text, and urgency level.
-pub const HealthZone = enum {
+pub const HealthZone = enum(u8) {
     /// All clear — session data within safe limits.
     green,
 

@@ -86,16 +86,16 @@ const DBUS_MESSAGE_TYPE_METHOD_CALL: c_int = 1;
 const DBUS_MESSAGE_TYPE_SIGNAL: c_int = 4;
 
 // libdbus-1 function declarations (extern C ABI).
-extern "dbus-1" fn dbus_error_init(error: *DBusError) void;
-extern "dbus-1" fn dbus_error_free(error: *DBusError) void;
-extern "dbus-1" fn dbus_error_is_set(error: *const DBusError) c_int;
+extern "dbus-1" fn dbus_error_init(err: *DBusError) void;
+extern "dbus-1" fn dbus_error_free(err: *DBusError) void;
+extern "dbus-1" fn dbus_error_is_set(err: *const DBusError) c_int;
 
-extern "dbus-1" fn dbus_bus_get(bus_type: c_int, error: *DBusError) ?*DBusConnection;
+extern "dbus-1" fn dbus_bus_get(bus_type: c_int, err: *DBusError) ?*DBusConnection;
 extern "dbus-1" fn dbus_bus_request_name(
     conn: *DBusConnection,
     name: [*:0]const u8,
     flags: c_uint,
-    error: *DBusError,
+    err: *DBusError,
 ) c_int;
 extern "dbus-1" fn dbus_bus_get_unique_name(conn: *DBusConnection) ?[*:0]const u8;
 
@@ -113,13 +113,13 @@ extern "dbus-1" fn dbus_connection_send_with_reply_and_block(
     conn: *DBusConnection,
     message: *DBusMessage,
     timeout_ms: c_int,
-    error: *DBusError,
+    err: *DBusError,
 ) ?*DBusMessage;
 extern "dbus-1" fn dbus_connection_add_filter(
     conn: *DBusConnection,
-    function: *const fn (?*DBusConnection, ?*DBusMessage, ?*anyopaque) callconv(.C) c_int,
+    function: *const fn (?*DBusConnection, ?*DBusMessage, ?*anyopaque) callconv(.c) c_int,
     user_data: ?*anyopaque,
-    free_data_function: ?*const fn (?*anyopaque) callconv(.C) void,
+    free_data_function: ?*const fn (?*anyopaque) callconv(.c) void,
 ) c_int;
 
 extern "dbus-1" fn dbus_message_new_method_call(
@@ -143,7 +143,7 @@ extern "dbus-1" fn dbus_message_append_args(
 ) c_int;
 extern "dbus-1" fn dbus_message_get_args(
     message: *DBusMessage,
-    error: *DBusError,
+    err: *DBusError,
     first_arg_type: c_int,
     ...,
 ) c_int;
@@ -449,7 +449,7 @@ pub fn callGetHealth(bus: *Connection) !?[]const u8 {
             last_err = err;
             if (attempt < MAX_RETRIES - 1) {
                 std.log.warn("GetHealth attempt {d} failed, retrying...", .{attempt + 1});
-                std.time.sleep(RETRY_DELAY_NS);
+                std.Thread.sleep(RETRY_DELAY_NS);
                 continue;
             }
             return last_err;
@@ -524,7 +524,7 @@ fn methodFilter(
     conn: ?*DBusConnection,
     msg: ?*DBusMessage,
     _: ?*anyopaque,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     const message = msg orelse return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     const connection = conn orelse return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 

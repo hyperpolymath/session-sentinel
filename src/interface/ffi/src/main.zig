@@ -76,7 +76,7 @@ var reload_requested = std.atomic.Value(bool).init(false);
 
 /// POSIX signal handler — sets atomic flags for the main loop to pick up.
 /// Signal handlers must be async-signal-safe, so we only write to atomics.
-fn signalHandler(sig: c_int) callconv(.C) void {
+fn signalHandler(sig: c_int) callconv(.c) void {
     switch (sig) {
         posix.SIG.HUP => {
             // SIGHUP: reload configuration without restarting.
@@ -95,17 +95,17 @@ fn signalHandler(sig: c_int) callconv(.C) void {
 }
 
 /// Install POSIX signal handlers for SIGHUP, SIGTERM, SIGINT, SIGUSR1.
-fn installSignalHandlers() !void {
+fn installSignalHandlers() void {
     const handler: posix.Sigaction = .{
         .handler = .{ .handler = signalHandler },
-        .mask = posix.empty_sigset,
+        .mask = posix.sigemptyset(),
         .flags = posix.SA.RESTART,
     };
 
-    try posix.sigaction(posix.SIG.HUP, &handler, null);
-    try posix.sigaction(posix.SIG.TERM, &handler, null);
-    try posix.sigaction(posix.SIG.INT, &handler, null);
-    try posix.sigaction(posix.SIG.USR1, &handler, null);
+    posix.sigaction(posix.SIG.HUP, &handler, null);
+    posix.sigaction(posix.SIG.TERM, &handler, null);
+    posix.sigaction(posix.SIG.INT, &handler, null);
+    posix.sigaction(posix.SIG.USR1, &handler, null);
 }
 
 // ---------------------------------------------------------------------------
@@ -144,12 +144,13 @@ fn parseArgs(allocator: std.mem.Allocator) !?Config {
                 return error.InvalidArgs;
             };
         } else if (std.mem.eql(u8, arg, "--version")) {
-            const stdout = std.io.getStdOut().writer();
-            try stdout.print("{s}\n", .{BUILD_INFO});
+            const out = std.fs.File.stdout();
+            try out.writeAll(BUILD_INFO);
+            try out.writeAll("\n");
             return null;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            const stdout = std.io.getStdOut().writer();
-            try stdout.writeAll(
+            const out = std.fs.File.stdout();
+            try out.writeAll(
                 \\session-sentinel-tray — KDE/Wayland system tray for Session Sentinel
                 \\
                 \\Usage: session-sentinel-tray [OPTIONS]
@@ -272,7 +273,7 @@ fn monitorLoop(
                 std.log.info("Immediate rescan requested (SIGUSR1)", .{});
                 break;
             }
-            std.time.sleep(check_interval_ns);
+            std.Thread.sleep(check_interval_ns);
             elapsed += check_interval_ns;
         }
     }
@@ -331,7 +332,7 @@ pub fn main() !void {
     std.log.info("{s} starting", .{BUILD_INFO});
 
     // Install signal handlers before any threads are spawned.
-    try installSignalHandlers();
+    installSignalHandlers();
 
     // Ensure the icon temp directory exists.
     try icons.ensureTempDir();
@@ -375,7 +376,7 @@ pub fn main() !void {
         while (!shutdown_requested.load(.acquire)) {
             bus.processMessages(100) catch |err| {
                 std.log.err("DBus message processing error: {any}", .{err});
-                std.time.sleep(100 * std.time.ns_per_ms);
+                std.Thread.sleep(100 * std.time.ns_per_ms);
             };
 
             // Handle flash timer for purple zone.
