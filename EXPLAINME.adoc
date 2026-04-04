@@ -1,0 +1,210 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+= Session Sentinel — Show Me The Receipts
+:toc:
+:icons: font
+
+The README makes claims. This file backs them up.
+
+== Multi-AI Session Health Monitor
+
+[quote, README]
+____
+Session Sentinel watches storage consumption across multiple AI tools (Claude,
+Copilot, Ollama, LM Studio, Continue.dev, Cursor, Aider, and custom providers),
+provides real-time health status via a KDE system tray icon, automatically cleans
+up stale sessions, and exposes a PanLL panel for fine-grained analysis and control.
+____
+
+`src/core/scanner.as` enumerates known AI provider storage paths and accumulates
+byte totals per provider. `src/core/health.as` maps the total against four
+threshold bands (Green < 200 MB, Yellow < 500 MB, Red < 800 MB, Purple >= 800 MB)
+and emits a typed health zone. `src/core/healer.as` triggers pruning actions
+appropriate to the current zone: orphan removal for Yellow, stale-conversation
+pruning for Red, aggressive cleanup for Purple. Provider paths and thresholds
+are all configurable in `~/.config/session-sentinel/config.toml` (default:
+`config/session-sentinel.toml`).
+
+**Caveat:** AffineScript core files (`src/core/*.as`) are the intended
+implementation. The PanLL panel manifest (`src/panels/manifest.json`) is
+specified in `README.adoc` but the `src/panels/` directory was not present at
+the time of this writing — it is pending wiring. The DBus interface is
+specified in `README.adoc` and implemented in the Zig FFI layer but requires
+a running KDE session to exercise.
+
+- Scanner: `src/core/scanner.as`
+- Health model: `src/core/health.as`
+- Healer: `src/core/healer.as`
+- Monitor loop: `src/core/monitor.as`
+- Diagnostics: `src/core/diagnostics.as`
+- Config schema: `config/session-sentinel.toml`
+
+== Idris2 ABI: Formally Verified Health State Machine
+
+[quote, README]
+____
+ABI (Idris2): src/interface/abi/*.idr — Formally verified health state machine,
+monitor protocol, panel protocol. Dependent types prove threshold ordering and
+state transition validity.
+____
+
+`src/interface/abi/HealthState.idr` defines the `HealthZone` dependent type
+with a proof that zone thresholds are strictly ordered (Green < Yellow < Red <
+Purple). `src/interface/abi/MonitorProtocol.idr` specifies the protocol between
+the scanner loop and the health emitter. `src/interface/abi/PanelProtocol.idr`
+specifies the DBus-level panel API. `src/interface/abi/Types.idr` provides
+shared type definitions. `src/interface/abi/Layout.idr` and `Foreign.idr`
+govern memory layout and FFI boundary types.
+https://idris2.readthedocs.io/en/latest/[Idris2 documentation]
+
+**Caveat:** The Idris2 files exist and define the interface, but C header
+generation from these specs (the `generated/abi/` step in the standard ABI/FFI
+pipeline) has not been verified as passing in CI.
+
+- ABI definitions: `src/interface/abi/HealthState.idr`, `MonitorProtocol.idr`, `PanelProtocol.idr`, `Types.idr`, `Layout.idr`, `Foreign.idr`
+- Learn more: https://github.com/hyperpolymath/rsr-template-repo/blob/main/ABI-FFI-README.md
+
+== Zig FFI: System Tray, DBus, Watchdog
+
+[quote, README]
+____
+FFI (Zig): src/interface/ffi/src/*.zig — Native KDE StatusNotifierItem via DBus,
+icon generation, watchdog, systemd integration. Zero runtime dependencies.
+____
+
+`src/interface/ffi/src/` contains Zig source files implementing the KDE
+StatusNotifierItem D-Bus protocol (native StatusNotifier method dispatch),
+dynamic icon generation for each health zone, a watchdog that tracks consecutive
+scan failures and enters degraded mode after 3, and systemd notification
+integration (`sd_notify`). `src/interface/ffi/build.zig` is the Zig build
+definition. Integration tests live in `src/interface/ffi/test/`.
+https://ziglang.org/documentation/master/[Zig language reference]
+
+**Caveat:** The D-Bus implementation is KDE-specific (StatusNotifierItem
+protocol). GNOME (AppIndicator) is not supported. Windows and macOS tray
+integration are not implemented.
+
+- FFI source: `src/interface/ffi/src/`
+- Build: `src/interface/ffi/build.zig`
+- Tests: `src/interface/ffi/test/`
+
+== Systemd User Service
+
+[quote, README]
+____
+Boot activation: Systemd user service starts with graphical session, watchdog-integrated.
+____
+
+`systemd/session-sentinel.service` is a systemd user unit with
+`WantedBy=graphical-session.target`. `systemd/install.sh` copies it to
+`~/.config/systemd/user/` and runs `systemctl --user daemon-reload`. The
+service invokes `session-sentinel-tray` which accepts `--once` for a manual
+single-scan and SIGHUP for config reload. The watchdog integration uses
+`WatchdogSec=` in the unit file and `sd_notify(WATCHDOG=1)` from the Zig layer.
+
+**Caveat:** Requires a systemd user session (standard on Fedora/GNOME/KDE).
+Incompatible with pure musl/runit systems.
+
+- Service file: `systemd/session-sentinel.service`
+- Installer: `systemd/install.sh`
+
+== Verification and Safety Case
+
+[quote, README]
+____
+Fault-tolerant: Watchdog monitors scan health; 3 consecutive failures enter
+degraded mode; automatic recovery with exponential backoff.
+____
+
+`verification/` contains the formal verification artefacts: `proofs/` holds
+Idris2 proofs of protocol properties, `tests/` holds protocol conformance tests,
+`fuzzing/` holds fuzz driver inputs, `simulations/` holds model simulations,
+`benchmarks/` holds performance regression cases, `traceability/` maps
+requirements to proof obligations, and `safety_case/` contains the structured
+assurance case. `coverage/` tracks proof coverage metrics.
+
+**Caveat:** The safety case is structured but not independently assessed.
+Fuzzing drivers require a supported fuzzer (AFL++, libFuzzer).
+
+- Proofs: `verification/proofs/`
+- Safety case: `verification/safety_case/`
+- Traceability: `verification/traceability/`
+
+== Stapeln Container Deployment
+
+[quote, README]
+____
+container/ — Stapeln container ecosystem (for server deployments)
+____
+
+`container/` provides Stapeln-compatible container definitions using a Chainguard
+base image. `container/Containerfile` is the Podman-compatible build file.
+`container/entrypoint.sh` bootstraps the service inside the container.
+`container/manifest.toml` declares the container manifest. `container/vordr.toml`
+configures the Vordr security policy. The compose example at
+`container/compose.example.toml` shows multi-container deployment.
+https://github.com/hyperpolymath/stapeln[Stapeln]
+
+**Caveat:** Server-mode deployment via container is secondary to the primary
+systemd-user install path. Container mode does not have a system tray.
+
+- Container: `container/Containerfile`, `container/manifest.toml`
+- Entry point: `container/entrypoint.sh`
+
+== Dogfooded Across The Account
+
+[cols="1,2"]
+|===
+| Technology | Also Used In
+
+| **Idris2 ABI** | https://github.com/hyperpolymath/stapeln, https://github.com/hyperpolymath/groove
+| **Zig FFI** | https://github.com/hyperpolymath/airborne-submarine-squadron, https://github.com/hyperpolymath/burble
+| **AffineScript core** | https://github.com/hyperpolymath/airborne-submarine-squadron (game logic)
+| **KDE StatusNotifierItem** | https://github.com/hyperpolymath/ambientops (volumod tray)
+| **Stapeln containers** | https://github.com/hyperpolymath/stapeln (container standard)
+| **PanLL panels** | https://github.com/hyperpolymath/panll (panel framework)
+| **Deno runtime** | https://github.com/hyperpolymath/airborne-submarine-squadron
+|===
+
+== File Map
+
+[cols="1,2"]
+|===
+| Path | Proves
+
+| `src/core/scanner.as` | Provider storage enumeration and byte accumulation
+| `src/core/health.as` | Threshold evaluation and health zone classification
+| `src/core/healer.as` | Zone-appropriate cleanup actions (prune, aggressive clean)
+| `src/core/monitor.as` | Main scan-and-notify loop with watchdog integration
+| `src/core/diagnostics.as` | Diagnostic log collection and export
+| `src/core/providers.as` | Known AI provider path registry
+| `src/core/config.as` | Config file loading and threshold binding
+| `src/interface/abi/HealthState.idr` | Dependent type proof of threshold ordering
+| `src/interface/abi/MonitorProtocol.idr` | Formally specified monitor ↔ health protocol
+| `src/interface/abi/PanelProtocol.idr` | DBus panel API specification
+| `src/interface/abi/Types.idr` | Shared ABI type definitions
+| `src/interface/abi/Layout.idr` | Memory layout proofs
+| `src/interface/abi/Foreign.idr` | FFI boundary type declarations
+| `src/interface/ffi/src/` | Zig implementations: tray, DBus, icons, watchdog, systemd
+| `src/interface/ffi/build.zig` | Zig build system entry point
+| `src/interface/ffi/test/` | FFI integration tests
+| `src/interface/generated/` | Auto-generated C headers from Idris2 ABI
+| `config/session-sentinel.toml` | Default config with all options documented
+| `systemd/session-sentinel.service` | Systemd user service unit
+| `systemd/install.sh` | Service installer script
+| `container/Containerfile` | Podman/Stapeln container definition (Chainguard base)
+| `container/manifest.toml` | Stapeln container manifest
+| `container/entrypoint.sh` | Container startup script
+| `verification/proofs/` | Idris2 proofs of protocol properties
+| `verification/safety_case/` | Structured assurance case
+| `verification/traceability/` | Requirements-to-proof traceability matrix
+| `verification/fuzzing/` | Fuzz driver inputs
+| `verification/benchmarks/` | Performance regression benchmarks
+| `features/` | BDD-style feature specifications
+| `tests/` | Test suite (Deno-based integration tests)
+| `examples/` | Example config files
+| `docs/` | Architecture and design documentation
+| `.machine_readable/` | A2ML state, meta, ecosystem files
+| `Justfile` | Task runner (build, install, test, clean)
+| `flake.nix` | Nix development shell
+| `guix.scm` | Guix package definition
+|===
