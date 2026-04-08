@@ -15,3 +15,8 @@ jobs:
           curl -X POST "http://boj-server.local:7700/cartridges/ssg-mcp/invoke"             -H "Content-Type: application/json"             -d "{\"repo\": \"${{ github.repository }}\", \"branch\": \"${{ github.ref_name }}\", \"engine\": \"casket\\"}"}
         continue-on-error: true
 permissions: read-all
+
+  - name: K9-SVC Validation
+    run: |
+      echo "K9-SVC validation"
+      [ -d .machine_readable/contractiles ] && echo "Contractiles present" || echo "No contractiles"
