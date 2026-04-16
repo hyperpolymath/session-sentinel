@@ -26,29 +26,29 @@ version = "1.0"
 [services.session-sentinel]
 image = "ghcr.io/hyperpolymath/session-sentinel:latest.ctp"
 ports = ["9847:9847"]
-environment = {
-  APP_HOST = "[::]",
-  APP_PORT = "9847",
-  APP_LOG_FORMAT = "json",
-  APP_DATA_DIR = "/data",
-}
 volumes = ["session-sentinel-data:/data"]
 restart = "always"
 healthcheck = { test = "curl -sf http://localhost:9847/health", interval = "30s", timeout = "5s", retries = 3 }
+
+[services.session-sentinel.environment]
+APP_HOST = "[::]"
+APP_PORT = "9847"
+APP_LOG_FORMAT = "json"
+APP_DATA_DIR = "/data"
 
 # Svalinn edge gateway: validates requests, enforces policies, TLS termination
 [services.svalinn]
 image = "ghcr.io/hyperpolymath/svalinn:latest.ctp"
 ports = ["443:443", "80:80"]
-environment = {
-  SVALINN_BACKEND = "http://session-sentinel:9847",
-  SVALINN_POLICY_FILE = "/etc/svalinn/gatekeeper.yaml",
-  SVALINN_TLS_AUTO = "true",
-}
 volumes = ["svalinn-config:/etc/svalinn:ro"]
 depends_on = ["session-sentinel"]
 restart = "always"
 healthcheck = { test = "curl -sf http://localhost:80/health", interval = "30s", timeout = "5s", retries = 3 }
+
+[services.svalinn.environment]
+SVALINN_BACKEND = "http://session-sentinel:9847"
+SVALINN_POLICY_FILE = "/etc/svalinn/gatekeeper.yaml"
+SVALINN_TLS_AUTO = "true"
 
 # ============================================================================
 # Volumes

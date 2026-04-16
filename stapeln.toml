@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# stapeln.toml — Layer-based container build for session-sentinel
+#
+# stapeln builds containers as composable layers (German: "to stack").
+# Each layer is independently cacheable, verifiable, and signable.
+
+[metadata]
+name = "session-sentinel"
+version = "0.1.0"
+description = "Session Sentinel — Deno-based session monitoring and management tool"
+author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
+license = "PMPL-1.0-or-later"
+registry = "ghcr.io/hyperpolymath"
+
+[build]
+containerfile = "Containerfile"
+context = "."
+runtime = "podman"
+
+# Layer definitions — Deno hunt pattern
+[layers.base]
+description = "Chainguard wolfi-base image"
+from = "cgr.dev/chainguard/wolfi-base:latest"
+cache = true
+verify = true
+
+[layers.app]
+description = "Deno runtime and bundled application binary"
+extends = "base"
+cache = false
+
+[layers.runtime]
+description = "Minimal static runtime image"
+from = "cgr.dev/chainguard/static:latest"
+cache = true
+verify = true

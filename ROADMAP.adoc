@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
-= YOUR Template Repo Roadmap
+= session-sentinel Roadmap
 
 == Current Status
 
-Initial development phase.
+Mirror bootstrap completed on April 7, 2026:
+
+* [x] Bitbucket mirror configured and synced (`bitbucket.org/hyperpolymath/session-sentinel`)
 
 == Milestones
 
-=== v0.1.0 - Foundation
-* [ ] Core functionality
-* [ ] Basic documentation
-* [ ] CI/CD pipeline
+=== v0.1.1 - Post-Mirror Hardening
+* [ ] Zig build verification
+* [ ] AffineScript compiler wiring validation
+* [ ] systemd install smoke test
+
+=== v0.2.0 - Automation Baseline
+* [ ] CI job for Zig build verification
+* [ ] CI job for install/uninstall smoke test
+* [ ] Release notes and packaging checklist
 
 === v1.0.0 - Stable Release
 * [ ] Full feature set
@@ -19,4 +26,4 @@ Initial development phase.
 
 == Future Directions
 
-_To be determined based on community feedback._
+Integrate governance/planning artifacts into release gating so manual queue items do not drift.
