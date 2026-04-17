@@ -115,3 +115,11 @@ zig-cache/
 # Runtime artifacts
 /tmp/session-sentinel*
 *.heartbeat
+target/
+node_modules/
+_build/
+deps/
+.elixir_ls/
+.cache/
+build/
+dist/
