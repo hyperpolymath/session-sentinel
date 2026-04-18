@@ -573,7 +573,7 @@ warranted.
 
 - **HEAD~1 grandfathering risk** (recurring pattern #1 from the audit
   brief): the CRG C claim was landed in commits
-  `0648d93 feat(crg): add crg-grade and crg-badge justfile recipes`
+  `0648d93 feat(crg): add crg-grade and crg-badge Justfile recipes`
   (2026-04-04) + `1e63263 test(session-sentinel): add structural
   validation tests for CRG Grade C` — that is, the grade was self-awarded
   in the same week the evidence for it was added, and the evidence
