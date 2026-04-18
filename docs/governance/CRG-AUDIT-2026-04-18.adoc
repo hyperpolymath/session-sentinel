@@ -1,0 +1,889 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+
+= session-sentinel — CRG Audit (2026-04-18)
+Jonathan D.A. Jewell
+2026-04-18
+:toc:
+:sectnums:
+
+== Scope and Standard
+
+Evaluates the `verification-ecosystem/session-sentinel` repository against
+*Component Readiness Grades v2.0 (STRICT)*, 2026-03-30 revision.
+session-sentinel is self-declared *C* via a sectioned `[crg] grade = "C"`
+block in STATE.a2ml (achieved 2026-04-04). The repo is categorised as a
+*container/infrastructure* repo; its self-declared C claim is explicitly
+tied to *structural* test coverage (Deno-based file/TOML validation) rather
+than to a running daemon binary. The audit checks the claim against
+on-disk evidence, estate-wide consumer signal, and the v2.0
+"honest D > dishonest B" clause.
+
+- Standard: `standards/component-readiness-grades/COMPONENT-READINESS-GRADES.md`
+- Criteria boilerplate: `docs/governance/CRG-CRITERIA.adoc` (already in-tree)
+- Audit template: `rsr-template-repo/docs/governance/CRG-AUDIT-TEMPLATE.adoc`
+- Calibration sibling: `verification-ecosystem/proof-of-work/docs/governance/CRG-AUDIT-2026-04-18.adoc`
+- Self-declared grade (prior art):
+  * `.machine_readable/6a2/STATE.a2ml` `[crg] grade = "C"`,
+    `achieved = "2026-04-04"`.
+  * `[project-context] completion-percentage = 40`.
+  * `[route-to-mvp]` lists Phase 3 (Rust source) at 10% and Phase 4
+    (CI/CD) at 20%.
+  * `[blockers-and-issues]` concedes: "Rust source implementation
+    incomplete — Phase 3 not started", "CI/CD not wired to deployment".
+- Audit date: 2026-04-18
+- Auditor: Jonathan D.A. Jewell
+
+Schema note: session-sentinel uses the *sectioned* `[crg] / grade = "C"`
+form (one of the 16 sectioned-schema repos in the Gossamer alignment
+work). It does *not* carry a flat `[metadata] crg-grade = "C"` key, so
+the current HYP-S005 detector (keyed on the flat form) will *not* fire
+on this repo despite the overclaim documented below. See
+"HYP-S005 canary" section.
+
+The audit grades the repo *as-is today*, not aspirationally.
+
+== v2.0 Strictness Recap
+
+[cols="1,3,4"]
+|===
+| Grade | Release Stage | Hard Requirement (v2.0)
+
+| X | None             | Untested.
+| F | Reject           | Harmful, wasteful, or superseded.
+| E | Pre-alpha        | >=1 test, failures documented.
+| D | Alpha            | Test matrix + scope documented + *RSR compliance mandatory*.
+| C | Alpha-stable     | Dogfooded, CI green, *deep per-file + per-directory annotation*.
+| B | Beta             | 6+ *diverse* external targets, issues fed back.
+| A | Stable           | Real-world external feedback confirms value; no harm.
+|===
+
+Publication requires B+. Long alpha is discipline, not shame.
+
+== Evidence Inventory (verified 2026-04-18)
+
+=== Structural compliance (Grade D floor)
+
+[cols="2,1,3"]
+|===
+| Item | State | Source
+
+| RSR mandatory workflows (17+)
+| PRESENT (21 YAML files in `.github/workflows/`)
+| `.github/workflows/` — hypatia-scan, codeql, scorecard, rsr-antipattern,
+  guix-nix-policy, mirror, instant-sync, secret-scanner, wellknown-enforcement,
+  ts-blocker, npm-bun-blocker, scorecard-enforcer, security-policy, quality,
+  workflow-linter, static-analysis-gate, dogfood-gate, boj-build, release,
+  rhodibot. *No dedicated Deno/Zig/AffineScript test workflow* — see CI note
+  below.
+
+| `.machine_readable/6a2/` canonical A2ml
+| PRESENT (STATE, META, ECOSYSTEM, AGENTIC, NEUROSYM, PLAYBOOK — all 6 files)
+| STATE.a2ml is the most substantive (67 lines). META (53 lines),
+  ECOSYSTEM (965 bytes), AGENTIC (1 131 bytes), NEUROSYM (676 bytes),
+  PLAYBOOK (1 154 bytes) are skeleton-plus-comment stubs — most have an
+  `[architecture-decisions]`/similar section with a comment example but no
+  ADR content.
+
+| `0-AI-MANIFEST.a2ml`
+| PRESENT (4 275 bytes)
+| Root
+
+| `README.adoc`, `EXPLAINME.adoc`, `CONTRIBUTING.{md,adoc}`, `SECURITY.md`, `CHANGELOG.md`, `ROADMAP.adoc`
+| PRESENT
+| Root
+
+| `docs/` orientation subtree
+| SUBSTANTIAL (17 subtrees: `accessibility/`, `architecture/`,
+  `attribution/`, `compliance/`, `decisions/`, `developer/`,
+  `governance/` (4 sub-subtrees), `legal/`, `practice/`, `reports/`,
+  `standards/`, `templates/`, `theory/`, `whitepapers/`, `wikis/`). Plus
+  `QUICKSTART.adoc`, `README.adoc`, `RSR_OUTLINE.adoc` (7 951 bytes),
+  `STATE-VISUALIZER.adoc` (9 201 bytes).
+| By far the *thickest* `docs/` tree of any recent C-candidate audited.
+
+| `LICENSE`
+| PRESENT (18 387 bytes, header `SPDX-License-Identifier: MPL-2.0` plus
+  FileCopyrightText — MPL-2.0 text is the legal fallback per Rule 2 of
+  the licence policy; intent is PMPL-1.0-or-later in source headers)
+| Root
+
+| `guix.scm` + `flake.nix` + `.guix-channel`
+| PRESENT (primary + fallback + channel)
+| Root
+
+| `.well-known/` (security.txt, ai.txt, humans.txt)
+| PRESENT (all three)
+| `.well-known/`
+
+| SPDX headers on source
+| PRESENT on all 7 AffineScript `src/core/*.as` files, all 6 Idris2
+  `src/interface/abi/*.idr` files, all 5 Zig `src/interface/ffi/src/*.zig`
+  files, and `tests/validate.test.ts`. Every sampled source file carries
+  `SPDX-License-Identifier: PMPL-1.0-or-later`.
+| 19/19 source files SPDX-clean.
+
+| `Containerfile` (not `Dockerfile`)
+| PRESENT (`Containerfile` at root + `container/Containerfile`). Zero
+  `Dockerfile` at any depth.
+| Container policy met.
+
+| `Justfile` + `Mustfile` (no `Makefile`)
+| PRESENT Justfile (42 414 bytes, 73 recipes) + `contractile.just`
+  (auto-imported). Zero `Makefile`. *No separate `Mustfile` at root* — the
+  must-verb lives under `.machine_readable/contractiles/must/Mustfile.a2ml`
+  (contractile layout, not root Mustfile).
+| RSR R-020 met; contractile layout per 2026-04 rule.
+
+| Contractile trident
+| PRESENT: `.machine_readable/contractiles/{dust, k9, lust, must, trust}/`
+  — five of six verbs directories. `bust/` and `adjust/` absent; `lust/`
+  present carrying `Intentfile.a2ml` (pre-rename vestige).
+| Trident present; six-verb layout partial; `lust→intend` rename not yet
+  applied in this repo.
+
+| Remote
+| `origin → git@github.com:hyperpolymath/session-sentinel.git` plus four
+  mirror remotes (bitbucket, codeberg, gitlab, sourcehut)
+| `git remote -v`. Per GitHub-only mirroring rule the four mirrors are
+  downstream-populated; the local `push` URLs are informational. No
+  violation, but the push URLs should be set to a decline-push sentinel
+  long-term.
+
+| `.devcontainer/`, `examples/`, `features/`, `systemd/`
+| PRESENT
+| Root
+
+| `.tool-versions`
+| PRESENT (160 bytes)
+| Root
+
+| Banned-language sweep: TypeScript / package.json / Makefile / Dockerfile
+| *One hit*: `tests/validate.test.ts` is the *only* TypeScript file in the
+  repo; `package.json` absent; `Makefile` absent; `Dockerfile` absent.
+  `deno.json` present and declares a single `test` task.
+| TypeScript presence is a known CLAUDE.md violation (the language policy
+  says "No new TypeScript files — Convert existing TS to ReScript"). The
+  file is a Deno test harness, not application code, but the estate rule
+  makes no carve-out for test code. Noted as a self-knowing policy
+  violation below. Carried from *well before* this audit — the test file
+  landed in commit `1e63263 test(session-sentinel): add structural
+  validation tests for CRG Grade C` (the exact file that buys the CRG C
+  claim, in the language the policy bans).
+|===
+
+*RSR compliance verdict*: **met — D-floor satisfied**. Workflows parse,
+LICENSE/SPDX clean, `.well-known/` complete, container/containerfile
+discipline held, docs/ tree substantial. No committed merge-conflict
+markers in the worktree. The one structural concern worth surfacing is
+the root Mustfile → `.machine_readable/contractiles/must/Mustfile.a2ml`
+migration — the new layout is in place and that is fine, but any audit
+grader looking for a *root* `Mustfile` will miss it.
+
+=== Code and proofs
+
+[cols="2,1,3"]
+|===
+| Item | Count | Notes
+
+| AffineScript core (`src/core/*.as`)
+| 7 files, *3 555* LOC
+| `monitor.as` 604, `diagnostics.as` 571, `providers.as` 562, `scanner.as`
+  516, `healer.as` 515, `config.as` 444, `health.as` 343. All files
+  carry SPDX + copyright + substantive module doc-comment blocks.
+  *Not built or exercised* — there is no `.as` compiler invocation in
+  any workflow or Justfile recipe, and no AffineScript build artefact in
+  the repo. The 3 555 LOC is *written but unverified*.
+
+| Idris2 ABI (`src/interface/abi/*.idr`)
+| 6 files, *2 050* LOC
+| `MonitorProtocol.idr` 530, `PanelProtocol.idr` 488, `HealthState.idr`
+  410, `Types.idr` 233, `Foreign.idr` 210, `Layout.idr` 179. Each has
+  substantive module doc + `%default total`. *Not typechecked in CI* —
+  no `idris2 --check` invocation in any workflow, no typecheck artefact.
+  The 2 050 LOC is *written but unverified*.
+
+| Zig FFI (`src/interface/ffi/src/*.zig`)
+| 5 files, *2 487* LOC (main 433, dbus 664, tray 467, icons 422,
+  watchdog 501, verisimdb 160)
+| Zig integration test (`test/integration_test.zig`) is 383 LOC. *Not
+  built in CI* — no `zig build` invocation in any workflow. 2 487 LOC
+  written but unverified.
+
+| Total *written* source LOC (AffineScript + Idris2 + Zig)
+| ~8 092 LOC across 18 source files
+| None of it typechecks, builds, or runs in the declared CI pipeline.
+
+| C header generation (`src/interface/generated/abi/`)
+| *0 files*
+| Directory is an `0.4-AI-MANIFEST.a2ml` + `README.adoc` stub. EXPLAINME
+  lists "`src/interface/generated/` | Auto-generated C headers from Idris2
+  ABI" but no headers have been generated.
+
+| PanLL panel manifest (`src/panels/`)
+| *absent*
+| `src/panels/` directory does not exist. README.adoc and EXPLAINME both
+  claim `src/panels/manifest.json`; neither the directory nor the file is
+  present on disk. EXPLAINME *concedes* this ("pending wiring") but
+  README does not.
+
+| Verification assets (`verification/**`)
+| *8 subtrees × 2 stub files each* = 16 files, every subtree is
+  `0.2-AI-MANIFEST.a2ml` + a one-or-two-line `README.adoc`.
+  `verification/proofs/README.adoc` = 15 bytes ("= Proofs Unit\n").
+| The `verification/` tree is an *empty scaffold*. EXPLAINME claims
+  "`verification/proofs/` | Idris2 proofs of protocol properties" — there
+  are no `.idr` files, no proof files at all, in `verification/`. This is
+  directly analogous to proof-of-work's fabricated File Map.
+
+| `believe_me` / `assert_total` / `Admitted` / `sorry` / `unsafeCoerce` /
+  `Obj.magic` in `src/`+`tests/`
+| *0*
+| Clean.
+
+| `panic-attack assail` run record
+| Not cited in STATE or Justfile
+| Pre-commit standing rule; running it is a follow-up, not a grader. Also:
+  none of the `src/**.as`, `src/**.idr`, `src/**.zig` files can be assailed
+  because none are compiled in CI.
+
+| SPDX header anomaly
+| One-off (cosmetic)
+| `grep -L "SPDX-License-Identifier"` on `src/core/` *appears* to return
+  hits, but on inspection every file carries the full
+  `SPDX-License-Identifier:` line as its first line. The `-L` false-negative
+  is caused by the tool reading "`// L:`" in a later comment as a header
+  prefix pattern collision. Not a real defect; noted so a future audit
+  doesn't chase it.
+|===
+
+*Files-vs-EXPLAINME discrepancy summary*: EXPLAINME.adoc *File Map*
+section lists 34 paths. On-disk: *26* of 34 exist; *8* do not. The
+missing eight are:
+
+- `src/panels/manifest.json` (directory absent)
+- `verification/proofs/*` (stub README only, no `.idr` files)
+- `verification/safety_case/*` (stub README only)
+- `verification/traceability/*` (stub README only)
+- `verification/fuzzing/*` (stub README only)
+- `verification/benchmarks/*` (stub README only)
+- `src/interface/generated/` (stub subtree only, no generated headers)
+- "`src/interface/ffi/test/`" is claimed to contain *FFI integration
+  tests* — one file exists (`integration_test.zig`, 383 LOC), but none of
+  its tests are exercised by CI.
+
+Overall: ~24% File-Map fabrication rate, *lower* than proof-of-work's
+60% but still a direct violation of the C clause "deep per-file
+annotation means *accurate* annotation". EXPLAINME does *partially*
+mitigate this by including explicit caveats ("the `src/panels/`
+directory was not present at the time of this writing — it is pending
+wiring"), unlike proof-of-work which simply asserts. Better discipline,
+still drift.
+
+=== Test matrix — declared vs actual
+
+STATE.a2ml `[crg] evidence` declares seven testing categories. Test command
+is `deno test --allow-read tests/`. Grep-verifiable on-disk:
+
+[cols="2,1,1,2"]
+|===
+| Category (declared) | Declared count | Grep-verifiable | Notes
+
+| unit (file existence)
+| "22 Deno tests covering file existence + directory structure"
+| 22 `Deno.test(` calls in `tests/validate.test.ts`
+| Declared number matches grep exactly. The 22 total covers unit + smoke +
+  p2p + e2e + contract + aspect + benchmark all in *one file* — see
+  reconciliation below.
+
+| smoke (content non-empty)
+| "content non-empty checks for README, LICENSE, config"
+| 3 Deno.tests labelled `smoke:` (README, LICENSE, config)
+| Matches.
+
+| p2p (all TOML parse)
+| "7 TOML files scanned, 6.7ms"
+| 1 Deno.test labelled `p2p:` that scans *N* TOML files at run time
+| Functional. The "7 TOML files / 6.7ms" figure is *declared as baseline
+  measurement* — not re-verified at audit time.
+
+| e2e (full validation chains)
+| "full validation chains for session-sentinel.toml and container/manifest.toml"
+| 2 Deno.tests labelled `e2e:` (sentinel, manifest)
+| Matches.
+
+| contract (required fields)
+| "sentinel config, security.txt (RFC 9116), manifest"
+| 3 Deno.tests labelled `contract:` (sentinel, security.txt, manifest)
+| Matches.
+
+| aspect (no secrets/placeholders)
+| "no hardcoded secrets, no unresolved critical placeholders"
+| 3 Deno.tests labelled `aspect:` (sentinel-secrets, container-secrets,
+  placeholders)
+| Matches.
+
+| benchmark (scan timed)
+| "full repo TOML scan timed and baselined (< 2000ms)"
+| 1 Deno.test labelled `benchmark:`
+| Matches.
+
+| *total*
+| *22 Deno tests* (implicit sum: 9 unit + 3 smoke + 1 p2p + 2 e2e + 3
+  contract + 3 aspect + 1 benchmark)
+| *22 `Deno.test(` invocations* in `tests/validate.test.ts`
+| **Declared matches grep exactly.** This is the strongest
+  category-vs-grep honesty signal of any recent C audit — the seven
+  listed suites *are* the seven labels in the single test file and *are*
+  the 22 tests.
+|===
+
+CI coverage: the test file is `tests/validate.test.ts` and the declared
+command is `deno test --allow-read tests/`. *No workflow under
+`.github/workflows/` invokes this command.* `deno.json` declares a
+`test` task, but no CI step runs `deno task test` or `deno test` —
+grepping all workflow YAML for `deno` / `cargo` / `zig` found *zero*
+matches. The 22 tests are runnable locally but are not part of the
+declared CI pipeline.
+
+Last green CI run date not cited in STATE. `dogfood-gate.yml` is present
+(16 385 bytes) but its test invocations are unrelated to the Deno
+structural harness.
+
+*This is the single most important finding for the C claim:* the declared
+CI evidence for C is "tests exist and pass", but those tests *are not
+run by CI*. The evidence is local-only.
+
+=== Annotation depth
+
+v2.0 C requires **per-file and per-directory orientation**. Evidence:
+
+- `docs/` tree is the *thickest* of any C-candidate audited recently:
+  17 named subtrees, `RSR_OUTLINE.adoc` (7 951 bytes),
+  `STATE-VISUALIZER.adoc` (9 201 bytes), `QUICKSTART.adoc`,
+  `README.adoc`. This materially exceeds proof-of-work (one file) and
+  neurophone (two files).
+
+- `docs/governance/` is particularly substantial: `CRG-CRITERIA.{adoc,a2ml}`,
+  `MAINTENANCE-CHECKLIST.{adoc,a2ml}`, `SOFTWARE-DEVELOPMENT-APPROACH.{adoc,a2ml}`,
+  `TSDM.{adoc,a2ml}` plus `audit/`, `maintenance/`, `planning/`
+  sub-subtrees. The repo already ships with its own CRG criteria
+  boilerplate, which is the correct C-ready posture.
+
+- Per-directory orientation: every meaningful subtree under `src/`,
+  `verification/`, `container/`, `features/`, `.machine_readable/` carries
+  a `README.adoc` + a `0.N-AI-MANIFEST.a2ml` numbered per nesting depth.
+  *Coverage is close to 100%* — this is the reverse of the typical C
+  failure mode.
+
+- Per-module inline docs: sampled `src/core/scanner.as`,
+  `src/interface/ffi/src/main.zig`, `src/interface/abi/HealthState.idr`:
+  all three open with extensive module doc-comment blocks including
+  purpose, invariants, and boundary conditions. `HealthState.idr` carries
+  an explicit "Only valid transitions are representable" comment and
+  `%default total`. *Deep annotation is present* — this is the
+  cleanest annotation sample in recent audits.
+
+- *Counter-finding*: annotation quality is high, but some of what is
+  annotated is not built or verified. A module-header comment that says
+  "Health zones form a lattice with formally verified transition rules"
+  is not evidence of verification — it is evidence of *intent to verify*.
+  v2.0 C's annotation clause means "the code is annotated", not "the
+  annotation is a proof". The annotation here *is* deep, but parts of
+  what is being annotated are *aspirational rather than operational*.
+
+- EXPLAINME.adoc (9 725 bytes) is by far the most honest of recent
+  C-candidate EXPLAINME files — it carries explicit "Caveat" blocks
+  ("the `src/panels/` directory was not present at the time of this
+  writing"; "C header generation ... has not been verified as passing in
+  CI"; "The safety case is structured but not independently assessed").
+  These caveats are the right discipline. The File Map at the bottom
+  then proceeds to cite the same non-existent files as if they existed
+  — *the caveats and the File Map are inconsistent with each other*.
+
+- ROADMAP.adoc is short but *populated*: v0.1.1 / v0.2.0 / v1.0.0
+  milestones with per-milestone checkboxes. Not the unfilled
+  rsr-template-repo placeholder (contrast with proof-of-work).
+
+- `.machine_readable/6a2/` META/ECOSYSTEM/AGENTIC/NEUROSYM/PLAYBOOK are
+  structured stubs-plus-comments — their *schema* is populated but their
+  *content* is thin. For example `META.a2ml`
+  `[architecture-decisions]` block contains only a comment example ADR.
+
+=== Dogfooding / home-stable evidence
+
+STATE.a2ml has *no* `[dogfooding-status]` section. Grep under
+`.machine_readable/` returns zero hits for `dogfoo` in content; the only
+hits are in template-sourced policy files (AI-CONVENTIONS.adoc etc).
+
+Indirect / adjacent signals:
+
+- `.github/workflows/dogfood-gate.yml` — a *gate* workflow, not a dogfood
+  log. Infrastructure-for-dogfooding without `[dogfooding-status]`.
+  Same pattern as proof-of-work and neurophone.
+
+- `features/boj-server/`, `features/panic-attacker/`, `features/ssg/` —
+  each is a scaffold subtree with a `README.adoc` and
+  `0.2-AI-MANIFEST.a2ml`. `features/ssg/ssg-bootstrap.sh` is the only
+  executable artefact. None of the three declares integration with the
+  respective upstream project.
+
+- EXPLAINME "Dogfooded Across The Account" table claims *seven*
+  cross-project integrations:
+  * Idris2 ABI ↔ stapeln, groove — plausible architectural pattern; no
+    in-tree evidence.
+  * Zig FFI ↔ airborne-submarine-squadron, burble — plausible; no in-tree
+    evidence.
+  * AffineScript core ↔ airborne-submarine-squadron — the ASS repo does
+    not (verified last session) contain AffineScript sources.
+  * KDE StatusNotifierItem ↔ ambientops (volumod tray) — the SNI Zig
+    code exists in session-sentinel (`dbus.zig` 664 LOC), but no
+    volumod wiring is present in-tree.
+  * Stapeln containers ↔ stapeln — `container/` is stapeln-ish
+    (`container/manifest.toml`, `container/vordr.toml`,
+    `container/compose.toml`) but nothing demonstrates that the
+    resulting container has been *deployed and exercised*. The
+    `stapeln.toml` at the repo root (1 004 bytes) is configuration, not
+    run evidence.
+  * PanLL panels ↔ panll — no `src/panels/` directory (see above).
+  * Deno runtime ↔ ASS — plausible but not in-tree evidence.
+
+- Estate-wide consumers: grep for `session-sentinel` across
+  `/var/mnt/eclipse/repos/` returns *50 hits across 21 files*. Of those:
+  * 15 are in session-sentinel itself (self-references).
+  * 2 are in a duplicate copy at
+    `systems-ecosystem/ambientops/session-sentinel/` — a much thinner
+    copy (no `src/core/*.as`, no `src/interface/`, no `docs/governance/`).
+    This is *stale ambientops integration evidence*, not a consumer.
+  * 2 are in `developer-ecosystem/standards/docs/proofs/spec-templates/T3-standard/cli-tool/session-sentinel.md` (a spec template placeholder).
+  * 1 is in `systems-ecosystem/ambientops/.machine_readable/6a2/STATE.a2ml` (ambientops names session-sentinel as part of its ecosystem — an aspirational link, not a usage signal).
+  * The rest are incidental mentions, filenames, or bot fleet hits.
+  *No external consumer references the binary, and the repo is not
+  installed on the author's systems (the `systemd` install has not been
+  smoke-tested — ROADMAP v0.1.1 "systemd install smoke test" is still
+  unchecked).*
+
+- `[maintenance-status]` in STATE.a2ml: `last-run-utc = "never"`,
+  `last-result = "unknown"`. The repo *declares* it has never been run.
+
+- Completion-percentage = 40 in STATE concedes the project is *less than
+  half built*. That is directly inconsistent with a C claim ("home-stable,
+  dogfooded").
+
+v2.0 C requires *continuous* home-context use with no known failures.
+The evidence does not support this for session-sentinel today.
+**Nothing in the tree demonstrates that the session-sentinel binary has
+been built, installed, or run**, and the repo itself concedes this in its
+own ROADMAP and `[maintenance-status]` sections.
+
+=== External validation (Grade B / A)
+
+No `[external-targets]`. No `[issues-fed-back]`. No `[field-signal]`.
+
+External-adjacent signals:
+
+- Mirror remotes configured (bitbucket/codeberg/gitlab/sourcehut) —
+  mirror presence is not usage.
+- No open GitHub issues flagged externally in STATE.
+- The duplicate copy at `systems-ecosystem/ambientops/session-sentinel/`
+  is a co-located mirror, not an external consumer.
+
+Per v2.0, reaching B requires *6+ diverse external targets* actually
+using the software with feedback fed back. session-sentinel is at *0*.
+
+=== HYP-S005 canary
+
+HYP-S005 is the estate-wide detector for
+"self-declared C while evidence supports E or D". Its existing match
+rule keys on the *flat* `crg-grade = "C"` key under `[metadata]`.
+session-sentinel uses the *sectioned* schema:
+
+[source,toml]
+----
+[crg]
+grade = "C"
+achieved = "2026-04-04"
+evidence = [ ... ]
+----
+
+with *no* flat `crg-grade = "C"` key. The current HYP-S005 regex will
+therefore *not* fire on this repo despite the overclaim documented here.
+
+This is a **rule-drift finding**: session-sentinel is one of the 16
+sectioned-schema repos in the Gossamer alignment inventory; those repos
+are currently a blind spot for the flat-schema HYP-S005 rule. The rule
+should be extended to match both forms:
+
+- flat: `^crg-grade\s*=\s*"C"` under `[metadata]`
+- sectioned: `^\[crg\]` followed by `^grade\s*=\s*"C"` within the
+  section
+
+Three independent overclaim signals would trigger the extended
+HYP-S005 on session-sentinel:
+
+1. Declared CI-green evidence: the 22 Deno tests *are not run by any
+   CI workflow* (no `deno`/`zig`/`cargo` invocation in any YAML under
+   `.github/workflows/`).
+2. Declared dogfooding: the repo's own `[maintenance-status]` says
+   `last-run-utc = "never"` and `[blockers-and-issues]` says "Rust
+   source implementation incomplete — Phase 3 not started".
+3. File-Map drift: EXPLAINME claims `src/panels/manifest.json`,
+   `verification/proofs/*.idr`, `src/interface/generated/abi/*.h`
+   which do not exist on disk.
+
+No HYP-S005 suppression comment is present in the repo and none is
+warranted.
+
+=== Self-knowing policy violations
+
+- **TypeScript in tests** (CLAUDE.md language-policy breach): the single
+  file that buys the CRG C claim (`tests/validate.test.ts`) is written in
+  TypeScript, which the hyperpolymath language policy flatly bans with
+  no test-code carve-out. The estate replacement is ReScript + Deno.
+  The file would also work as a `.ts`→`.res` port or as raw JavaScript
+  under Deno. Carried in commit `1e63263` ("add structural validation
+  tests for CRG Grade C") — this is *recurring pattern #2* from the
+  audit brief: "gamed workflows — standing up policy-violating
+  infrastructure to buy a grade that policy-compliant infrastructure
+  would have denied".
+
+- **CI not running the declared tests** (gamed workflow — recurring
+  pattern #3 from the audit brief): the declared CI pipeline under
+  `.github/workflows/` does not invoke `deno test`. The test file is
+  runnable but not run in the declared pipeline. This is the classic
+  "tests pass locally, CI is green by not testing" smell.
+
+- **`lust/` vestige of `intend/`**: the contractile layout rule is
+  `lust → intend`, `intent → intend`. This repo still has
+  `.machine_readable/contractiles/lust/Intentfile.a2ml` (old name +
+  old filename). Minor, but it's a standing CLAUDE.md rename.
+
+- **EXPLAINME File Map vs Caveats**: the caveats (early in the file) and
+  the File Map (at the bottom) are mutually inconsistent. The caveat
+  says `src/panels/` "was not present at the time of this writing";
+  the File Map cites `src/panels/manifest.json` as a real file. A C
+  audit requires internal consistency in the authoritative
+  per-file-annotation doc.
+
+- **Panel manifest claimed by README.adoc without caveat**: the
+  README's `=== Key Properties` block lists "PanLL panel" without any
+  caveat; EXPLAINME's caveat is not reflected upstream in README. The
+  root `README.adoc` also lists `src/panels/manifest.json` as part of
+  the architecture.
+
+- **HEAD~1 grandfathering risk** (recurring pattern #1 from the audit
+  brief): the CRG C claim was landed in commits
+  `0648d93 feat(crg): add crg-grade and crg-badge justfile recipes`
+  (2026-04-04) + `1e63263 test(session-sentinel): add structural
+  validation tests for CRG Grade C` — that is, the grade was self-awarded
+  in the same week the evidence for it was added, and the evidence
+  consists of structural tests plus a STATE.a2ml entry. There is no
+  separate independent audit commit in the history. This is not
+  dishonest, but it is exactly the pattern the strict-audit regime is
+  supposed to catch.
+
+=== Ecosystem-overlap note
+
+The duplicate at `systems-ecosystem/ambientops/session-sentinel/` is a
+stale copy (older dates, thinner tree, same `.machine_readable/`
+structure). ambientops is a known monorepo consumer/integration host;
+either this is a submodule that was severed, or it is leftover
+pre-move scaffolding. The rule is "aerie canonical, ambientops subset"
+for network/system tools; but session-sentinel is its own top-level
+verification-ecosystem repo now, so the ambientops copy should be
+resolved (either convert to symlink/submodule or delete). Noted under
+*non-negotiables* below.
+
+== Grade x Evidence Matrix
+
+[cols="1,1,3,3"]
+|===
+| Grade | Met? | Evidence supporting | Evidence against / gaps
+
+| X
+| n/a
+| 22 Deno tests exist → not X.
+| —
+
+| F
+| n/a
+| Not superseded; no harm signal.
+| Duplicate at `systems-ecosystem/ambientops/session-sentinel/` merits a
+  disposition decision.
+
+| E
+| ✓
+| 22 `Deno.test(` invocations exist; seven labelled categories
+  (unit/smoke/p2p/e2e/contract/aspect/benchmark); property-style TOML
+  parse test plus benchmark timer. Test failures would be visible
+  locally.
+| —
+
+| D
+| ✓ *(earned)*
+| Structural shell complete: 21 workflows parse, 6a2 layout present,
+  contractile subtree populated, Justfile (73 recipes) + `contractile.just`,
+  Containerfile (not Dockerfile) at root and in `container/`,
+  `.well-known/` complete, LICENSE + `.guix-channel` + guix.scm + flake.nix,
+  SPDX headers on 19/19 source files, `docs/` tree with 17 named
+  subtrees and substantive governance documents. Scope documented in
+  README, EXPLAINME, ROADMAP.adoc. Zero dangerous patterns in
+  `src/`+`tests/`. Zero committed merge-conflict markers.
+| `lust/` vestige of `intend/`; `Mustfile` migrated to
+  `.machine_readable/contractiles/must/`; 6a2 META/ECOSYSTEM/AGENTIC/
+  NEUROSYM/PLAYBOOK populated only with schema + comments. None of
+  these drops the D-floor but each is a C-audit target.
+
+| C
+| *✗*
+| Annotation depth is the strongest of any recent C-candidate audited
+  — 19/19 source files SPDX-clean with substantive module doc blocks;
+  per-directory README coverage near 100%; `docs/` tree substantial
+  including governance sub-subtree; EXPLAINME includes explicit caveats
+  (not fabricated, unlike proof-of-work); ROADMAP populated with
+  milestone checkboxes (not template boilerplate, unlike proof-of-work);
+  test file categories match grep exactly (22 declared = 22 found, no
+  overclaim).
+| **(1)** *No [dogfooding-status] section*; four "Dogfooded Across The
+  Account" table entries are unverifiable in-tree (AffineScript↔ASS,
+  PanLL↔panll, SNI↔ambientops, Stapeln↔stapeln). **(2)** *CI does not
+  run the declared tests*: no `deno`/`cargo`/`zig` invocation in any of
+  the 21 workflows; the C claim is backed by a local-only
+  `deno test --allow-read tests/`. **(3)** *8 of 34 EXPLAINME File Map
+  entries do not exist* (panel manifest, verification/* contents,
+  generated C headers). **(4)** *The 8 092 LOC of AffineScript + Idris2
+  + Zig source is written but unverified*: no CI step typechecks the
+  `.idr`, no CI step builds the `.zig`, no compiler exists for the
+  `.as`. **(5)** *[maintenance-status] says last-run-utc="never"*,
+  last-result="unknown", and `[blockers-and-issues]` concedes "Rust
+  source implementation incomplete — Phase 3 not started".
+  **(6)** *completion-percentage = 40* concedes less-than-half-built.
+  **(7)** *TypeScript test file* is a CLAUDE.md language-policy breach
+  (no new TS files).
+
+| B
+| ✗
+| —
+| Zero external targets. Zero issues-fed-back. Zero field signal.
+
+| A
+| ✗
+| —
+| No field confirmation.
+|===
+
+== Verdict
+
+*Current CRG grade: **D (Alpha)**. Demote one grade from self-declared C.*
+
+Self-declared: *C*. Audited: *D*. One-grade honesty delta — identical to
+proof-of-work, smaller than neurophone's two-grade delta. No
+committed merge-conflict markers or fabricated EXPLAINME here; the
+defect is subtler — *annotation discipline is real, but it annotates
+software that does not run in the declared pipeline*.
+
+Reasoning (one sentence): session-sentinel has the cleanest annotation
+and doc-tree discipline of any recent C-candidate, *and* the 22 declared
+tests match grep exactly, *but* it fails the C clauses on three
+independent axes — (a) no `[dogfooding-status]` section and the repo's
+own `[maintenance-status]` concedes `last-run-utc = "never"`, (b) the
+declared 22 Deno tests are not invoked by any workflow under
+`.github/workflows/`, (c) ~8 000 LOC of source across AffineScript /
+Idris2 / Zig is written but not typechecked, built, or run by CI.
+
+The D grade is earned, not conservative-by-default, on three positive
+signals:
+
+1. *Annotation depth*: 19/19 source files SPDX-clean with substantive
+   module doc blocks; 17-subtree `docs/` tree including populated
+   governance sub-subtree (CRG-CRITERIA, MAINTENANCE-CHECKLIST,
+   SOFTWARE-DEVELOPMENT-APPROACH, TSDM); per-directory README coverage
+   near 100%. This is the highest annotation score in the recent
+   C-audit cohort.
+2. *Test-count honesty*: declared 22 tests match grep exactly (seven
+   labelled categories, seven matching `Deno.test(...)` label groups —
+   no overclaim). Contrast with proof-of-work's 37-56% overclaims.
+3. *Architectural intent is internally coherent*: Idris2 ABI
+   (HealthState.idr with `%default total` and typed lattice of zones)
+   + Zig FFI (StatusNotifierItem DBus) + AffineScript core (affine-typed
+   scanner/healer/monitor loop) is a defensible ABI/FFI standard
+   instantiation. 2 050 LOC of Idris2 + 2 487 LOC of Zig + 3 555 LOC
+   of AffineScript is substantial written work.
+
+What blocks *immediate* promotion to C (do these first):
+
+. **Wire CI to run the declared tests.** Add a workflow step
+  `deno test --allow-read tests/` to one of the existing workflows (or
+  a dedicated `tests.yml`) so the 22-test structural harness runs on
+  every push. Without this, the C claim has no CI backing.
+. **Add `[dogfooding-status]` to STATE.a2ml** with concrete done-entries.
+  Candidates: "session-sentinel-tray installed via systemd/install.sh on
+  author's Fedora 43 system, running since DATE; last 24h scan log at
+  PATH". Or *remove the C claim* until there is real use.
+. **Smoke-test the systemd install.** ROADMAP v0.1.1 already lists this
+  as an unchecked item. Run `systemd/install.sh`, let the tray run for
+  24h, capture a scan log, cite in STATE. That alone lifts the
+  `last-run-utc = "never"` blocker.
+. **Reconcile EXPLAINME File Map with on-disk truth.** Either create the
+  missing artefacts (`src/panels/manifest.json`, at least one `.idr` file
+  under `verification/proofs/`, a generated C header under
+  `src/interface/generated/abi/`), or remove them from the File Map and
+  add inline caveats that match the ones at the top of the document.
+. **Wire a minimal build for Idris2 ABI.** One CI step that runs
+  `idris2 --check src/interface/abi/HealthState.idr` is enough to back
+  the "formally verified" language in README.adoc. Without it, the
+  annotation is aspirational.
+. **Wire a minimal `zig build` step.** `src/interface/ffi/build.zig`
+  exists; a CI step that runs `zig build` on this path is trivial and
+  converts 2 487 LOC of written Zig into built Zig.
+. **Fix the TypeScript breach.** Convert `tests/validate.test.ts` to
+  either plain JavaScript under Deno or (preferred) ReScript. A test
+  harness is still a language-policy subject.
+. **Remove or rebadge the "Dogfooded Across The Account" table in
+  EXPLAINME** so it cites real integrations (e.g. strike the
+  AffineScript↔ASS row unless ASS actually consumes `.as` sources).
+. **Rename `.machine_readable/contractiles/lust/` → `intend/`** and
+  `Intentfile.a2ml` → `Intendfile.a2ml` per the 2026-04 contractile
+  rename. Trivial.
+. **Resolve the duplicate at `systems-ecosystem/ambientops/session-sentinel/`**
+  — submodule, symlink, or delete. Document in `META.a2ml`.
+
+What blocks promotion to B (after C):
+
+. Zero external targets. For a systemd-tray KDE tool the natural
+  diverse-6 are: Fedora KDE, Fedora GNOME (AppIndicator — currently
+  NOT supported, per EXPLAINME caveat), openSUSE, Ubuntu, Arch, a
+  second author on a distinct machine. The EXPLAINME caveat that
+  GNOME/AppIndicator is not supported is itself a diversity blocker:
+  five of those six targets would need a second Zig FFI back-end.
+. No issues-fed-back pipeline. Even one GitHub issue from a second
+  human reporting a tray icon bug on Fedora KDE would seed this.
+. A tray tool with `last-run-utc = "never"` has no play-log evidence
+  whatsoever; "home-stable" needs at minimum a two-week daemon uptime
+  record on the author's own desktop.
+
+== Notes on Non-Negotiables Respected by this Audit
+
+- The MPL-2.0 LICENSE header is treated as the automatic legal fallback
+  per Rule 2 of the licence policy; the source-file SPDX headers
+  uniformly assert `PMPL-1.0-or-later` as intent. Not a defect.
+- The absence of a root `Mustfile` is not a defect — the file was
+  migrated to `.machine_readable/contractiles/must/Mustfile.a2ml` per
+  the 2026-04 contractile layout rule. This is *new-form* compliance.
+- The absence of AffineScript-compiler CI wiring is noted as a
+  C-blocker but not a D-blocker, because the AffineScript compiler
+  maturity path is tracked independently (`nextgen-languages/affinescript-ecosystem/*`).
+- Standing rules respected: PMPL-1.0-or-later SPDX on all source,
+  GitHub-only push origin (mirrors are informational remotes),
+  AffineScript core + Idris2 ABI + Zig FFI ABI/FFI standard, Containerfile
+  not Dockerfile, `.well-known/` triplet present.
+- The ambientops duplicate is flagged as a scope-and-hygiene follow-up,
+  not a grading factor.
+- The Gossamer sectioned-schema blind spot in HYP-S005 is flagged as
+  *rule drift*, not a session-sentinel defect — the repo's schema is
+  the new canonical form.
+
+== STATE.a2ml update recommendation
+
+Recommended (do NOT execute as part of this audit) — edit
+`.machine_readable/6a2/STATE.a2ml`:
+
+[source,toml]
+----
+[metadata]
+project = "session-sentinel"
+version = "0.1.0"
+last-updated = "2026-04-18"
+status = "active"
+
+[project-context]
+name = "session-sentinel"
+purpose = "Container/infrastructure repo for the Session Sentinel service — disk space monitoring, self-healing, PanLL panel integration."
+completion-percentage = 35     # was 40 — Phase 3 at 10% and Phase 4 at 20% average below 40 once you weight by evidence
+
+[position]
+phase = "implementation"
+maturity = "alpha"
+
+[crg]
+grade = "D"                    # was "C"
+grade-previous = "C"           # audit trail
+grade-claimed = "2026-04-04"
+grade-demoted = "2026-04-18"
+audit = "docs/governance/CRG-AUDIT-2026-04-18.adoc"
+next-target = "C"
+# evidence retained for archival; it describes 22 real Deno tests that
+# do pass locally. The C *demotion* is not about the tests — it is about
+# (a) no CI invocation of them, (b) no dogfooding log, (c) ~8kLOC of
+# AffineScript+Idris2+Zig written but not built/typechecked/run in CI.
+
+[blockers-and-issues]
+issues = [
+  "CI does not invoke the 22 Deno structural tests (no deno/cargo/zig step in any .github/workflows/ YAML).",
+  "Idris2 ABI not typechecked in CI (no `idris2 --check` step).",
+  "Zig FFI not built in CI (no `zig build` step).",
+  "AffineScript core (3 555 LOC) has no compiler wiring.",
+  "No [dogfooding-status] section; [maintenance-status] last-run-utc='never'.",
+  "EXPLAINME File Map claims src/panels/manifest.json, verification/proofs/*.idr, src/interface/generated/abi/*.h that do not exist on disk.",
+  "tests/validate.test.ts is TypeScript — hyperpolymath language policy bans new TS files (no test-code carve-out).",
+  "contractile/lust/ vestige of contractile/intend/ 2026-04 rename not yet applied.",
+  "Duplicate scaffold at systems-ecosystem/ambientops/session-sentinel/ needs disposition (symlink / submodule / delete).",
+]
+
+[critical-next-actions]
+actions = [
+  "Add a CI step: `deno test --allow-read tests/` in a new tests.yml or in quality.yml.",
+  "Run systemd/install.sh and capture a 24h scan log — cite in [dogfooding-status].",
+  "Reconcile EXPLAINME File Map with on-disk truth; either build the missing artefacts or strike them from the Map.",
+  "Port tests/validate.test.ts away from TypeScript (Deno JS or ReScript).",
+  "Rename .machine_readable/contractiles/lust/ → intend/ and update filename.",
+  "Add a minimal `idris2 --check` + `zig build` CI path.",
+]
+
+[maintenance-status]
+last-run-utc = "never"         # unchanged
+last-report = "docs/reports/maintenance/latest.json"
+last-result = "unknown"
+open-warnings = 9              # was 0 — nine audit findings open
+open-failures = 0
+
+[ecosystem]
+part-of = ["ambientops", "hyperpolymath infrastructure"]
+depends-on = ["stapeln", "selur-compose", "cerro-torre", "svalinn", "vordr"]
+----
+
+Demote target: *D*. Route-to-C is the ten-item fix list above. The
+nearest-term "make CI actually run the tests" action alone covers one
+of the three axes; the other two (dogfooding + build/typecheck) still
+need explicit work.
+
+== Related Files
+
+- `.machine_readable/6a2/STATE.a2ml` — authoritative self-declared
+  state; recommend demote C→D with `[crg]` section updated and audit
+  trail keys added.
+- `EXPLAINME.adoc` — File Map section claims 8 paths that do not
+  exist; explicit caveats earlier in the document contradict the File
+  Map. Reconcile.
+- `README.adoc` — lists "PanLL panel" and `src/panels/manifest.json`
+  without caveat; port the EXPLAINME caveats here.
+- `tests/validate.test.ts` — the 22-test harness; convert from
+  TypeScript and wire into CI.
+- `.github/workflows/dogfood-gate.yml` / `quality.yml` — candidates for
+  hosting the missing `deno test` step.
+- `src/interface/abi/*.idr` — candidates for a minimal
+  `idris2 --check` CI path.
+- `src/interface/ffi/build.zig` — candidate for a minimal `zig build`
+  CI path.
+- `ROADMAP.adoc` — v0.1.1 "systemd install smoke test" unchecked item is
+  the fastest `last-run-utc = "never"` lift.
+- `.machine_readable/contractiles/lust/` — rename to `intend/`.
+- `systems-ecosystem/ambientops/session-sentinel/` — duplicate scaffold
+  to dispose.
+- `docs/governance/CRG-CRITERIA.adoc` — repo-local CRG criteria doc
+  (present and populated; good).
+- `verification-ecosystem/proof-of-work/docs/governance/CRG-AUDIT-2026-04-18.adoc`
+  — calibration sibling (same 1-grade-demote outcome, different
+  defect profile).
+
+_End of audit._
