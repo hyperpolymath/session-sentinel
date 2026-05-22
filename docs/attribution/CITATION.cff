@@ -9,7 +9,7 @@ version: 0.1.0
 date-released: 2026-03-16
 url: "https://github.com/hyperpolymath/session-sentinel"
 repository-code: "https://github.com/hyperpolymath/session-sentinel"
-license: PMPL-1.0-or-later
+license: MPL-2.0
 keywords:
   - "rsr"
   - "formal-verification"

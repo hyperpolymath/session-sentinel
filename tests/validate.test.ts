@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
 // Session Sentinel — Structural Validation Test Suite
@@ -197,8 +197,8 @@ Deno.test("e2e: container manifest full validation chain", () => {
   // Stage 4: License correctness
   assertEquals(
     meta.license,
-    "PMPL-1.0-or-later",
-    "E2E: manifest license must be PMPL-1.0-or-later"
+    "MPL-2.0",
+    "E2E: manifest license must be MPL-2.0"
   );
 });
 
