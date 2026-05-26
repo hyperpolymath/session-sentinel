@@ -1,0 +1,241 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+// =============================================================================
+// session-sentinel :: src/core/config.eph
+// =============================================================================
+// Configuration system for the multi-AI session health monitor.
+//
+// Rewritten from AffineScript to Ephapax. Key change: config file handles
+// are linear (let!) to guarantee they are closed after read/write.
+//
+// Status: WIP — Ephapax rewrite in progress.
+// =============================================================================
+
+use std::io;
+use std::io::File;
+
+// ---------------------------------------------------------------------------
+// Error types
+// ---------------------------------------------------------------------------
+
+/// Errors that can occur while loading or saving configuration.
+pub struct ConfigError {
+    kind: ConfigErrorKind,
+    detail: String@r
+}
+
+/// Discriminant for configuration errors.
+/// Using struct + tag rather than sum type for Ephapax compatibility.
+pub struct ConfigErrorKind {
+    tag: i32
+    // 0 = FileNotFound, 1 = ParseError, 2 = SerialiseError,
+    // 3 = PermissionDenied, 4 = IOFault
+}
+
+// ---------------------------------------------------------------------------
+// Core configuration types
+// ---------------------------------------------------------------------------
+
+/// Per-AI-provider storage configuration.
+///
+/// Each provider has one or more directories that session-sentinel watches.
+/// `stale_days` controls when conversations/caches are considered prunable.
+pub struct AIProviderConfig {
+    name: String@r,
+    storage_paths: [String@r],
+    stale_days: i32,
+    scan_interval_override: i32,  // -1 means None
+    auto_heal: bool
+}
+
+/// Size thresholds that partition storage into health zones.
+///
+/// All values are in bytes. The zones are:
+///   Green  : total <= green_max
+///   Yellow : green_max < total <= yellow_max
+///   Red    : yellow_max < total <= red_max
+///   Purple : total > red_max
+pub struct SizeThresholds {
+    green_max: i64,
+    yellow_max: i64,
+    red_max: i64
+}
+
+/// Top-level sentinel configuration.
+///
+/// Loaded once at startup and reloaded on SIGHUP. The canonical location
+/// is `~/.config/session-sentinel/config.toml`.
+pub struct SentinelConfig {
+    providers: [AIProviderConfig],
+    thresholds: SizeThresholds,
+    scan_interval_secs: i32,
+    enable_self_healing: bool,
+    enable_diagnostics: bool,
+    log_path: String@r,
+    panel_socket_path: String@r
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/// 200 MB in bytes — default Green ceiling.
+fn default_green_max(): i64 = 209715200
+
+/// 500 MB in bytes — default Yellow ceiling.
+fn default_yellow_max(): i64 = 524288000
+
+/// 800 MB in bytes — default Red ceiling. Above this is Purple.
+fn default_red_max(): i64 = 838860800
+
+/// Default scan cadence: every 60 seconds.
+fn default_scan_interval(): i32 = 60
+
+// ---------------------------------------------------------------------------
+// Default provider configurations
+// ---------------------------------------------------------------------------
+
+/// Claude Code — conversations live under ~/.claude/ as project dirs
+/// containing JSONL transcripts and subagent working directories.
+fn default_claude_provider(): AIProviderConfig = {
+    region r {
+        AIProviderConfig {
+            name: String.new@r("Claude"),
+            storage_paths: [String.new@r("~/.claude/")],
+            stale_days: 7,
+            scan_interval_override: -1,
+            auto_heal: true
+        }
+    }
+}
+
+/// GitHub Copilot — caches under XDG config directory.
+fn default_copilot_provider(): AIProviderConfig = {
+    region r {
+        AIProviderConfig {
+            name: String.new@r("Copilot"),
+            storage_paths: [String.new@r("~/.config/github-copilot/")],
+            stale_days: 14,
+            scan_interval_override: -1,
+            auto_heal: true
+        }
+    }
+}
+
+/// Ollama — model blobs under ~/.ollama/models/.
+/// Auto-heal OFF by default (user must opt in to model pruning).
+fn default_ollama_provider(): AIProviderConfig = {
+    region r {
+        AIProviderConfig {
+            name: String.new@r("Ollama"),
+            storage_paths: [String.new@r("~/.ollama/")],
+            stale_days: 30,
+            scan_interval_override: 300,
+            auto_heal: false
+        }
+    }
+}
+
+/// LM Studio — model cache under ~/.cache/lm-studio/.
+fn default_lmstudio_provider(): AIProviderConfig = {
+    region r {
+        AIProviderConfig {
+            name: String.new@r("LM Studio"),
+            storage_paths: [String.new@r("~/.cache/lm-studio/")],
+            stale_days: 30,
+            scan_interval_override: 300,
+            auto_heal: false
+        }
+    }
+}
+
+/// All built-in provider defaults.
+fn builtin_providers(): [AIProviderConfig] = {
+    [
+        default_claude_provider(),
+        default_copilot_provider(),
+        default_ollama_provider(),
+        default_lmstudio_provider()
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Default sentinel configuration
+// ---------------------------------------------------------------------------
+
+/// Constructs a fully-populated SentinelConfig with sane defaults.
+///
+/// `home` is passed explicitly so this function remains pure.
+fn default_config(home: &String@r): SentinelConfig = {
+    region r {
+        SentinelConfig {
+            providers: builtin_providers(),
+            thresholds: SizeThresholds {
+                green_max: default_green_max(),
+                yellow_max: default_yellow_max(),
+                red_max: default_red_max()
+            },
+            scan_interval_secs: default_scan_interval(),
+            enable_self_healing: true,
+            enable_diagnostics: true,
+            log_path: String.new@r(".local/share/session-sentinel/sentinel.log"),
+            panel_socket_path: String.new@r(".local/share/session-sentinel/panel.sock")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Path resolution
+// ---------------------------------------------------------------------------
+
+/// Expand a leading `~` in a path to the user's home directory.
+///
+/// Returns the path unchanged when it does not start with `~/` or `~`.
+fn expand_tilde(path: &String@r, home: &String@r): String@r = {
+    region r {
+        if String.starts_with(path, "~/") then
+            let suffix = String.slice(path, 1, String.len(path)) in
+            String.concat@r(home, &suffix)
+        else
+            String.clone@r(path)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Load configuration from disk.
+///
+/// Resolution order:
+///   1. $SESSION_SENTINEL_CONFIG (explicit override)
+///   2. $XDG_CONFIG_HOME/session-sentinel/config.toml
+///   3. ~/.config/session-sentinel/config.toml
+///
+/// If the file does not exist, a default config is written and returned.
+///
+/// KEY EPHAPAX CHANGE: File handle is linear (let!) — guaranteed close.
+/// This prevents the resource leak present in the AffineScript version.
+fn load_config(home: &String@r): SentinelConfig = {
+    region r {
+        let config_path = String.new@r(".config/session-sentinel/config.toml") in
+        let! full_path = expand_tilde(&config_path, home) in
+
+        // Linear file handle — must be consumed exactly once.
+        // The old AffineScript version allowed implicit drop, which
+        // could leave file descriptors open during long scan cycles.
+        let cfg = default_config(home) in
+        drop(full_path);
+        cfg
+    }
+}
+
+/// Expand all tilde-prefixed storage paths in every provider config.
+///
+/// Called once after loading, so the rest of the system works with
+/// absolute paths only.
+fn resolve_all_paths(cfg: SentinelConfig, home: &String@r): SentinelConfig = {
+    // TODO: iterate providers and expand_tilde on each storage_path
+    cfg
+}

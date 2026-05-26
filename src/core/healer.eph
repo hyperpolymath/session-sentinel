@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+// =============================================================================
+// session-sentinel :: src/core/healer.eph
+// =============================================================================
+// Self-healing engine for AI session storage.
+//
+// Rewritten from AffineScript to Ephapax. Key change: deletion handles
+// are linear (let!) — every rm/rmdir operation must be explicitly
+// completed or error-handled. No silent drops means no partial deletes.
+//
+// Safety invariants (carried forward from AffineScript):
+//   - NEVER delete data belonging to a running AI session.
+//   - NEVER delete model files unless the provider config allows auto_heal.
+//   - Every action is logged before execution.
+//   - Dry-run mode is supported.
+//
+// Status: WIP — Ephapax rewrite in progress.
+// =============================================================================
+
+use std::io;
+
+// ---------------------------------------------------------------------------
+// Heal actions — integer tags for FFI compatibility
+// ---------------------------------------------------------------------------
+
+fn action_prune_orphans(): i32 = 0
+fn action_prune_stale_conversations(): i32 = 1
+fn action_prune_stale_subagents(): i32 = 2
+fn action_remove_empty_dirs(): i32 = 3
+fn action_prune_worktrees(): i32 = 4
+
+/// Human-readable description of a heal action.
+fn describe_action(action: i32): String@r = {
+    region r {
+        if action == 0 then String.new@r("Prune orphaned subagent directories")
+        else if action == 1 then String.new@r("Prune stale conversations")
+        else if action == 2 then String.new@r("Prune stale subagent dirs")
+        else if action == 3 then String.new@r("Remove empty directories")
+        else String.new@r("Prune orphaned git worktrees")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Heal result
+// ---------------------------------------------------------------------------
+
+/// Outcome of a healing run.
+pub struct HealResult {
+    bytes_freed: i64,
+    actions_taken_count: i32,
+    error_count: i32,
+    fully_successful: bool,
+    duration_ms: i64
+}
+
+/// Construct an empty (no-op) heal result.
+fn empty_result(): HealResult = {
+    HealResult {
+        bytes_freed: 0,
+        actions_taken_count: 0,
+        error_count: 0,
+        fully_successful: true,
+        duration_ms: 0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Active session detection
+// ---------------------------------------------------------------------------
+
+/// Check whether any active session exists for the given provider.
+///
+/// KEY EPHAPAX CHANGE: Process list handle is linear (let!).
+/// The AffineScript version could leave /proc file descriptors open
+/// if the process enumeration was interrupted.
+fn is_provider_active(provider_name: &String@r): bool = {
+    // TODO: check process list via Zig FFI with linear handle
+    // let! proc_handle = process::list_open() in
+    // let result = process::find_pattern(&proc_handle, pattern) in
+    // drop(proc_handle);  // Explicit close
+    // result
+    false
+}
+
+/// Check whether a specific path is safe to delete.
+/// Returns false if any process has the path open.
+fn is_safe_to_delete(path: &String@r): bool = {
+    // TODO: check via Zig FFI
+    true
+}
+
+// ---------------------------------------------------------------------------
+// Individual healing operations
+// ---------------------------------------------------------------------------
+
+/// Prune orphaned subagent directories for a single provider.
+///
+/// KEY EPHAPAX CHANGE: Each directory removal uses a linear handle.
+/// The removal must either succeed or the error must be handled —
+/// no silent partial deletes.
+fn prune_orphans_for(storage_paths: &[String@r]): i64 = {
+    let mut freed: i64 = 0;
+
+    // TODO: walk storage_paths/projects/*/conversations/cw_*
+    // For each orphan:
+    //   let! rm_handle = io::Dir.remove_all(path) in
+    //   let size = io::Dir.size_before_remove(&rm_handle) in
+    //   drop(rm_handle);  // Completes the removal
+    //   freed = freed + size;
+
+    freed
+}
+
+/// Prune directories older than max_age_days.
+fn prune_stale_dirs(storage_paths: &[String@r], max_age_days: i32, subagent_only: bool, now: i64): i64 = {
+    let max_age_secs: i64 = max_age_days * 86400 in
+    let mut freed: i64 = 0;
+
+    // TODO: walk and prune with linear handles per removal
+
+    freed
+}
+
+/// Remove empty directories under the provider's storage paths.
+/// Walks bottom-up so nested empty dirs are removed in a single pass.
+fn remove_empty_dirs_for(storage_paths: &[String@r]): i32 = {
+    let mut removed: i32 = 0;
+
+    // TODO: bottom-up walk with linear handles
+
+    removed
+}
+
+/// Prune orphaned git worktrees.
+fn prune_orphan_worktrees(worktree_paths: &[String@r], worktree_count: i32): i64 = {
+    let mut freed: i64 = 0;
+
+    // TODO: iterate worktrees, check is_orphaned, remove with linear handle
+
+    freed
+}
+
+// ---------------------------------------------------------------------------
+// Action plan generation
+// ---------------------------------------------------------------------------
+
+/// Determine which actions to take based on the current health zone.
+///
+/// Aggressiveness increases with zone severity:
+///   Green  -> no action
+///   Yellow -> PruneOrphans, RemoveEmptyDirs
+///   Red    -> Yellow + PruneStaleSubagents, PruneStaleConversations, PruneWorktrees
+///   Purple -> Red but with max_age = 1 day (aggressive)
+///
+/// Returns a bitmask of actions to take.
+fn plan_actions(zone: i32): i32 = {
+    if zone == 0 then 0     // Green: no action
+    else if zone == 1 then  // Yellow: orphans + empty dirs
+        (1 + 8)             // bits 0 and 3
+    else if zone == 2 then  // Red: all actions
+        (1 + 2 + 4 + 8 + 16)
+    else                    // Purple: all actions (aggressive thresholds)
+        (1 + 2 + 4 + 8 + 16)
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Execute the self-healing engine for all configured providers.
+///
+/// KEY EPHAPAX DESIGN: The entire heal cycle is structured as a
+/// sequence of linear resource acquisitions and releases. Each
+/// provider's healing is a self-contained scope where all file
+/// handles are opened, used, and closed within the scope boundary.
+///
+/// The AffineScript version's crash-inducing pattern was:
+///   1. Open dir handle (affine)
+///   2. Exception during scan
+///   3. Handle implicitly dropped (GC-dependent timing)
+///   4. D-Bus poll blocked on I/O
+///   5. Watchdog kills process (SIGABRT)
+///
+/// The Ephapax version prevents this because:
+///   1. Open dir handle (linear, let!)
+///   2. Exception during scan
+///   3. COMPILE ERROR: linear handle not consumed
+///   → Forces developer to add explicit error-path cleanup
+fn auto_heal(
+    zone: i32,
+    enable_self_healing: bool,
+    providers_count: i32,
+    dry_run: bool,
+    now: i64
+): HealResult = {
+    // Short-circuit if healing is disabled or zone is healthy.
+    if !enable_self_healing then empty_result()
+    else if zone == 0 then empty_result()
+    else {
+        let mut total_freed: i64 = 0;
+        let mut action_count: i32 = 0;
+        let mut error_count: i32 = 0;
+
+        let actions_mask = plan_actions(zone) in
+
+        // TODO: iterate providers, check auto_heal and active sessions,
+        // execute planned actions with linear handles
+
+        let end = now in  // TODO: actual clock
+        HealResult {
+            bytes_freed: total_freed,
+            actions_taken_count: action_count,
+            error_count: error_count,
+            fully_successful: error_count == 0,
+            duration_ms: 0
+        }
+    }
+}

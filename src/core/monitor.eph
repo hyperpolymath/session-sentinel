@@ -1,0 +1,309 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+// =============================================================================
+// session-sentinel :: src/core/monitor.eph
+// =============================================================================
+// Main monitoring loop.
+//
+// Rewritten from AffineScript to Ephapax. This is where the critical
+// crash-causing bug lived: the D-Bus connection handle was affine (could
+// be silently dropped), and when the scan cycle threw an exception, the
+// handle was left dangling. The next dbus_connection_read_write_dispatch
+// call would block indefinitely on the leaked connection, triggering the
+// systemd watchdog SIGABRT.
+//
+// THE FIX: D-Bus connection is linear (let!). It must be explicitly
+// closed in every code path — success, error, and signal handler.
+// Ephapax enforces this at compile time.
+//
+// Lifecycle:
+//   1. Load config, resolve paths.
+//   2. Initial scan and classification.
+//   3. Open D-Bus connection (LINEAR — let!).
+//   4. Set tray icon, open panel socket.
+//   5. Enter loop: signal → scan → classify → heal → tray → panel → sleep.
+//   6. On exit: close panel, close D-Bus (LINEAR — must happen).
+//
+// Status: WIP — Ephapax rewrite in progress.
+// =============================================================================
+
+use std::io;
+
+use config::{SentinelConfig, load_config, resolve_all_paths};
+use health::{classify, build_summary, zone_label, zone_colour, zone_green};
+use health::{HealthReading, HealthSummary, TrendAnalysis};
+use diagnostics::{DiagnosticLog, Watchdog, new_log, new_watchdog};
+use diagnostics::{log_info, log_warning, log_critical, watchdog_ping};
+use diagnostics::{cat_health, cat_storage, run_diagnostics};
+use scanner::{ProviderSnapshot, aggregate_bytes};
+use healer::{auto_heal, HealResult};
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/// POSIX signals the monitor handles (integer tags).
+fn sig_hup(): i32 = 1     // reload config
+fn sig_term(): i32 = 15   // graceful shutdown
+fn sig_usr1(): i32 = 10   // force immediate scan
+
+/// The monitor's run state (integer tags).
+fn state_running(): i32 = 0
+fn state_degraded(): i32 = 1
+fn state_failed(): i32 = 2
+fn state_shutting_down(): i32 = 3
+
+/// Maximum consecutive scan failures before entering Failed state.
+fn max_consecutive_failures(): i32 = 3
+
+/// Maximum trend history readings to retain.
+fn max_trend_history(): i32 = 100
+
+/// Complete monitor state.
+///
+/// Note: In Ephapax, we do NOT store the D-Bus connection here.
+/// It lives as a linear binding in the main loop scope, ensuring
+/// it cannot be forgotten or leaked. This is the architectural
+/// change that fixes the SIGABRT crash.
+pub struct MonitorState {
+    config: SentinelConfig,
+    current_zone: i32,
+    last_scan_time: i64,         // -1 means None
+    trend_history_count: i32,
+    diagnostic_log: DiagnosticLog,
+    watchdog: Watchdog,
+    run_state: i32,
+    degraded_count: i32,
+    heal_bytes_this_hour: i64,
+    heal_hour_start: i64
+}
+
+// ---------------------------------------------------------------------------
+// Initialisation
+// ---------------------------------------------------------------------------
+
+/// Initialise the monitor: load config, perform initial scan, set up state.
+///
+/// KEY EPHAPAX DESIGN: This function does NOT open the D-Bus connection.
+/// That happens in main(), where the connection binding is linear (let!).
+/// Separating state init from connection opening means init cannot leak.
+fn initialise(home: &String@r, now: i64): MonitorState = {
+    let config = load_config(home) in
+    let resolved = resolve_all_paths(config, home) in
+
+    region r {
+        let mut diag_log = new_log(String.new@r(".local/share/session-sentinel/sentinel.log")) in
+        log_info(&mut diag_log, cat_health(),
+            String.new@r("session-sentinel starting up (Ephapax rewrite)"), now);
+
+        let wd = new_watchdog(resolved.scan_interval_secs) in
+
+        // TODO: initial scan
+        let zone = zone_green() in
+
+        log_info(&mut diag_log, cat_health(),
+            String.new@r("Initial zone: Green (Healthy)"), now);
+
+        MonitorState {
+            config: resolved,
+            current_zone: zone,
+            last_scan_time: now,
+            trend_history_count: 1,
+            diagnostic_log: diag_log,
+            watchdog: wd,
+            run_state: state_running(),
+            degraded_count: 0,
+            heal_bytes_this_hour: 0,
+            heal_hour_start: now
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Signal handling
+// ---------------------------------------------------------------------------
+
+/// Process any pending signal.
+///
+/// Returns: 0 = no signal, 1 = SIGHUP (config reloaded), 2 = SIGTERM,
+///          3 = SIGUSR1 (force scan).
+fn handle_signals(state: &mut MonitorState, home: &String@r, now: i64): i32 = {
+    // TODO: poll signal via Zig FFI
+    // The signal poll itself is non-blocking and does not touch D-Bus.
+    0  // no signal
+}
+
+// ---------------------------------------------------------------------------
+// Single scan cycle
+// ---------------------------------------------------------------------------
+
+/// Execute one scan-classify-heal-update cycle.
+fn run_cycle(state: &mut MonitorState, now: i64): () = {
+    // Reset hourly heal counter if an hour has passed.
+    if now - state.heal_hour_start >= 3600 then {
+        state.heal_bytes_this_hour = 0;
+        state.heal_hour_start = now;
+    } else ();
+
+    // ---- Scan ----
+    // TODO: scan_all with linear directory handles
+
+    // ---- Classify ----
+    // TODO: classify total bytes
+
+    // ---- Heal ----
+    let heal_result = auto_heal(
+        state.current_zone,
+        state.config.enable_self_healing,
+        0,   // TODO: provider count
+        false,
+        now
+    ) in
+    state.heal_bytes_this_hour = state.heal_bytes_this_hour + heal_result.bytes_freed;
+
+    // ---- Update tray ----
+    // TODO: update tray icon via Zig FFI (using BORROWED D-Bus ref)
+
+    // ---- Push panel frame ----
+    // TODO: push JSON frame to panel socket
+
+    // ---- Update state ----
+    state.last_scan_time = now;
+    watchdog_ping(&mut state.watchdog, now);
+    state.run_state = state_running();
+    state.degraded_count = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------------------
+
+/// The main monitoring loop.
+///
+/// THIS IS THE CRITICAL FIX: The D-Bus connection is a linear binding
+/// (let!) that lives for the entire duration of the loop. It is passed
+/// by borrow (&) to functions that need it (tray updates, panel pushes).
+///
+/// When the loop exits (SIGTERM or unrecoverable error), the linear
+/// binding MUST be consumed by an explicit close call. The Ephapax
+/// compiler enforces this — if any exit path forgets to close the
+/// connection, it's a compile-time error.
+///
+/// The AffineScript version's bug:
+///   - D-Bus connection was affine (implicit drop allowed)
+///   - On exception, connection was silently dropped
+///   - GC timing determined when the socket was actually closed
+///   - Meanwhile, next dbus_connection_read_write_dispatch blocked
+///   - Systemd watchdog killed the process (SIGABRT)
+///
+/// The Ephapax version prevents this because:
+///   - D-Bus connection is linear (let! — must use exactly once)
+///   - Every exit path must explicitly drop(dbus_conn)
+///   - Compiler error if any path leaks the connection
+///   - No GC timing dependency, no blocked polls, no SIGABRT
+fn run_monitor(state: &mut MonitorState, now: i64): () = {
+    // LINEAR D-Bus connection — the core fix.
+    // This handle MUST be explicitly closed on every exit path.
+    let! dbus_conn = dbus_connect() in
+
+    let mut cycle_count: i32 = 0;
+    let mut current_time: i64 = now;
+    let mut should_exit: bool = false;
+
+    while !should_exit {
+        // Exit if shutting down.
+        if state.run_state == state_shutting_down() then {
+            region r {
+                log_info(&mut state.diagnostic_log, cat_health(),
+                    String.new@r("Shutdown complete — closing connections"), current_time);
+            }
+            should_exit = true;
+        } else {
+            // Check signals (does NOT use D-Bus).
+            let sig_result = handle_signals(state, &String.new@r(""), current_time) in
+            let force_scan = sig_result == 3 in
+
+            if sig_result == 2 then {
+                // SIGTERM — initiate shutdown
+                state.run_state = state_shutting_down();
+            } else {
+                // Run scan cycle.
+                // Tray updates borrow the D-Bus connection (non-consuming).
+                // update_tray_icon(&dbus_conn, zone, tooltip);
+                run_cycle(state, current_time);
+                cycle_count = cycle_count + 1;
+
+                // Run full diagnostics every 10 cycles.
+                if cycle_count % 10 == 0 then {
+                    if state.config.enable_diagnostics then
+                        run_diagnostics(
+                            &mut state.diagnostic_log,
+                            &mut state.watchdog,
+                            &[],  // TODO: readings array
+                            0,
+                            state.heal_bytes_this_hour,
+                            current_time
+                        )
+                    else ()
+                } else ();
+
+                // Sleep (skip if SIGUSR1 forced immediate scan).
+                if !force_scan then {
+                    // TODO: sleep via Zig FFI
+                    // current_time = clock_now();
+                    ()
+                } else ()
+            }
+        }
+    };
+
+    // CRITICAL: Explicitly close the D-Bus connection.
+    // This line is REQUIRED by Ephapax's linear type system.
+    // Removing it would be a compile-time error.
+    // This is the line that prevents the SIGABRT crash.
+    drop(dbus_conn);
+}
+
+// ---------------------------------------------------------------------------
+// D-Bus connection management (FFI bridge stubs)
+// ---------------------------------------------------------------------------
+
+/// Open a D-Bus session bus connection.
+///
+/// Returns a LINEAR handle that MUST be explicitly dropped.
+/// The Zig FFI implementation sets a 5-second timeout on
+/// dbus_connection_read_write_dispatch (the old code had no timeout,
+/// which caused the infinite block → watchdog kill).
+fn dbus_connect(): i64 = {
+    // TODO: call Zig FFI dbus_bus_get_private(DBUS_BUS_SESSION)
+    // The Zig side sets: dbus_connection_set_timeout(conn, 5000)
+    0
+}
+
+/// Close a D-Bus connection.
+///
+/// This is the drop implementation for the linear D-Bus handle.
+fn dbus_close(conn: i64): () = {
+    // TODO: call Zig FFI dbus_connection_close + dbus_connection_unref
+    ()
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+/// Top-level entry point for the monitor daemon.
+///
+/// Initialises state and hands off to run_monitor.
+fn main(): () = {
+    region r {
+        let home = String.from_env@r("HOME") in  // reads $HOME at runtime
+        let now: i64 = 0 in  // TODO: clock_now() via FFI
+
+        let mut state = initialise(&home, now) in
+        run_monitor(&mut state, now);
+
+        drop(home);
+    }
+}

@@ -1,0 +1,183 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+// =============================================================================
+// session-sentinel :: src/core/scanner.eph
+// =============================================================================
+// Multi-AI storage scanner.
+//
+// Rewritten from AffineScript to Ephapax. Key change: directory handles
+// from list_dir are linear (let!) — each directory is opened, read, and
+// closed in a single scope. The old AffineScript version used affine
+// handles (could be silently dropped), which under rapid rescanning
+// could accumulate open file descriptors.
+//
+// Status: WIP — Ephapax rewrite in progress.
+// =============================================================================
+
+use std::io;
+
+// ---------------------------------------------------------------------------
+// Supporting types
+// ---------------------------------------------------------------------------
+
+/// A single directory entry.
+pub struct DirEntry {
+    name: String@r,
+    path: String@r,
+    is_dir: bool,
+    is_file: bool
+}
+
+/// Summary of a single conversation directory (Claude-specific).
+pub struct ConversationInfo {
+    path: String@r,
+    total_bytes: i64,
+    transcript_count: i32,
+    subagent_count: i32,
+    orphan_subagent_count: i32,
+    last_activity: i64
+}
+
+/// Git worktree detection result.
+pub struct WorktreeInfo {
+    worktree_path: String@r,
+    gitdir_target: String@r,
+    is_orphaned: bool
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot — the main output of a scan
+// ---------------------------------------------------------------------------
+
+/// Point-in-time storage snapshot for a single AI provider.
+pub struct ProviderSnapshot {
+    provider_name: String@r,
+    total_bytes: i64,
+    file_count: i32,
+    oldest_file: i64,     // -1 means None
+    newest_file: i64,     // -1 means None
+    conversation_count: i32,
+    subagent_count: i32,
+    orphan_count: i32,
+    scanned_at: i64
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Recursively compute the total size and file count of a directory.
+///
+/// KEY EPHAPAX CHANGE: The directory handle from list_dir is linear.
+/// Each recursive call opens, reads, and closes its handle in a single
+/// scope. This is the core fix for the file descriptor leak.
+///
+/// In AffineScript, dir handles could be implicitly dropped at any
+/// point, meaning during deep recursion the GC timing determined when
+/// handles were actually released. Under rapid scanning (every 60s),
+/// this led to fd exhaustion and subsequent D-Bus failures.
+fn recursive_stat(path: &String@r): (i64, i32) = {
+    // Linear directory handle — must be consumed in this scope
+    let! dir_handle = io::Dir.open(path) in
+    let entries = io::Dir.read_all(&dir_handle) in
+    drop(dir_handle);  // Explicit close — CANNOT be deferred
+
+    let mut total: i64 = 0;
+    let mut count: i32 = 0;
+
+    // TODO: iterate entries, recurse into subdirs, stat files
+    // Each sub-directory gets its own linear handle scope
+
+    (total, count)
+}
+
+// ---------------------------------------------------------------------------
+// Claude-specific scanning
+// ---------------------------------------------------------------------------
+
+/// Determine whether a directory is a subagent working directory.
+///
+/// Heuristic: the directory name starts with "cw_" (Claude worktree prefix)
+/// or contains a .task.json manifest.
+fn is_subagent_dir(name: &String@r, path: &String@r): bool = {
+    // TODO: String.starts_with and file existence check via FFI
+    false
+}
+
+/// Check whether a subagent directory is orphaned.
+///
+/// An orphaned subagent has no .jsonl output file.
+fn is_orphan_subagent(subagent_path: &String@r): bool = {
+    // Linear handle for orphan check
+    let! dir_handle = io::Dir.open(subagent_path) in
+    let entries = io::Dir.read_all(&dir_handle) in
+    drop(dir_handle);  // Close immediately
+
+    // TODO: check if any entry ends with ".jsonl"
+    true
+}
+
+/// Scan a single Claude conversation directory.
+fn scan_conversation(conv_path: &String@r): ConversationInfo = {
+    let! dir_handle = io::Dir.open(conv_path) in
+    let entries = io::Dir.read_all(&dir_handle) in
+    drop(dir_handle);
+
+    // TODO: iterate entries, count transcripts, subagents, orphans
+    region r {
+        ConversationInfo {
+            path: String.clone@r(conv_path),
+            total_bytes: 0,
+            transcript_count: 0,
+            subagent_count: 0,
+            orphan_subagent_count: 0,
+            last_activity: 0
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Generic provider scanning
+// ---------------------------------------------------------------------------
+
+/// Scan a non-Claude provider using plain recursive directory sizing.
+fn scan_generic(name: &String@r, storage_paths: &[String@r], now: i64): ProviderSnapshot = {
+    let mut total_bytes: i64 = 0;
+    let mut file_count: i32 = 0;
+
+    // TODO: iterate storage_paths, call recursive_stat on each
+    // Each path gets its own linear handle scope
+
+    region r {
+        ProviderSnapshot {
+            provider_name: String.clone@r(name),
+            total_bytes: total_bytes,
+            file_count: file_count,
+            oldest_file: -1,
+            newest_file: -1,
+            conversation_count: 0,
+            subagent_count: 0,
+            orphan_count: 0,
+            scanned_at: now
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Convenience: compute the aggregate total bytes across all snapshots.
+fn aggregate_bytes(snapshots: &[ProviderSnapshot], count: i32): i64 = {
+    let mut total: i64 = 0;
+    // TODO: sum snapshot.total_bytes
+    total
+}
+
+/// Convenience: compute the aggregate orphan count across all snapshots.
+fn aggregate_orphans(snapshots: &[ProviderSnapshot], count: i32): i32 = {
+    let mut total: i32 = 0;
+    // TODO: sum snapshot.orphan_count
+    total
+}
