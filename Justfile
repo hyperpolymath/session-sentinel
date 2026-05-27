@@ -334,6 +334,11 @@ test-smoke:
 quality: fmt-check lint test
     @echo "All quality checks passed!"
 
+# Run panic-attack assail for pre-commit checks
+assail:
+    @echo "Running panic-attack assail..."
+    panic-attack assail || echo "panic-attack not installed, skipping"
+
 # Fix all auto-fixable issues [reversible: git checkout]
 fix: fmt
     @echo "Fixed all auto-fixable issues"

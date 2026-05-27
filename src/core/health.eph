@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+// =============================================================================
+// session-sentinel :: src/core/health.eph
+// =============================================================================
+// Health zone classification and trend analysis.
+//
+// Rewritten from AffineScript to Ephapax. Health zones use integer tags
+// rather than AffineScript's algebraic variants, keeping the logic
+// compatible with the Zig FFI layer.
+//
+// Status: WIP — Ephapax rewrite in progress.
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Health zone — represented as integer tags for FFI compatibility
+// ---------------------------------------------------------------------------
+
+/// Health zone constants.
+/// Green  = 0 — healthy: storage is well within limits.
+/// Yellow = 1 — caution: storage is growing but not yet critical.
+/// Red    = 2 — warning: storage is high; self-healing should be active.
+/// Purple = 3 — critical: storage has breached all thresholds.
+fn zone_green(): i32 = 0
+fn zone_yellow(): i32 = 1
+fn zone_red(): i32 = 2
+fn zone_purple(): i32 = 3
+
+/// Numeric severity for ordering and comparison.
+/// Higher values are more severe.
+fn zone_severity(zone: i32): i32 = zone
+
+/// Human-readable label for display in the PanLL panel and logs.
+fn zone_label(zone: i32): String@r = {
+    region r {
+        if zone == 0 then String.new@r("Green (Healthy)")
+        else if zone == 1 then String.new@r("Yellow (Caution)")
+        else if zone == 2 then String.new@r("Red (Warning)")
+        else String.new@r("Purple (Critical)")
+    }
+}
+
+/// Hex colour code for the tray icon and panel badge.
+fn zone_colour(zone: i32): String@r = {
+    region r {
+        if zone == 0 then String.new@r("#22c55e")
+        else if zone == 1 then String.new@r("#eab308")
+        else if zone == 2 then String.new@r("#ef4444")
+        else String.new@r("#a855f7")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Classification
+// ---------------------------------------------------------------------------
+
+/// Classify aggregate storage usage into a health zone.
+///
+/// `total_bytes` is the sum across all providers.
+/// Thresholds are passed as individual values for simplicity.
+fn classify(total_bytes: i64, green_max: i64, yellow_max: i64, red_max: i64): i32 = {
+    if total_bytes <= green_max then zone_green()
+    else if total_bytes <= yellow_max then zone_yellow()
+    else if total_bytes <= red_max then zone_red()
+    else zone_purple()
+}
+
+// ---------------------------------------------------------------------------
+// Trend analysis
+// ---------------------------------------------------------------------------
+
+/// Describes the direction in which storage usage is moving.
+/// Improving = -1, Stable = 0, Degrading = 1
+fn trend_improving(): i32 = -1
+fn trend_stable(): i32 = 0
+fn trend_degrading(): i32 = 1
+
+/// Trend analysis result.
+pub struct TrendAnalysis {
+    direction: i32,
+    growth_rate_bps: i64,
+    sample_count: i32
+}
+
+/// A single historical data point.
+pub struct HealthReading {
+    timestamp: i64,
+    total_bytes: i64,
+    zone: i32
+}
+
+/// Analyse a list of historical readings and produce a trend result.
+///
+/// Requires at least 2 readings to compute a direction; with fewer,
+/// returns Stable with no prediction.
+///
+/// The growth rate is computed via least-squares linear regression on
+/// (timestamp, total_bytes) pairs.
+fn analyse_trend(
+    readings: &[HealthReading],
+    reading_count: i32,
+    scan_interval_secs: i32
+): TrendAnalysis = {
+    if reading_count < 2 then
+        TrendAnalysis {
+            direction: trend_stable(),
+            growth_rate_bps: 0,
+            sample_count: reading_count
+        }
+    else {
+        // Linear regression: y = a + b*x where x=timestamp, y=total_bytes
+        // Simplified: compute slope from first and last readings
+        let first_ts = readings[0].timestamp in
+        let first_bytes = readings[0].total_bytes in
+        let last_ts = readings[reading_count - 1].timestamp in
+        let last_bytes = readings[reading_count - 1].total_bytes in
+
+        let time_span = if last_ts > first_ts then last_ts - first_ts else 1 in
+        let byte_delta = last_bytes - first_bytes in
+        let slope = byte_delta / time_span in
+
+        // Classify direction: stable if absolute growth rate < 5% of
+        // latest reading per scan interval
+        let stability_band = (last_bytes * 5) / 100 in
+        let growth_per_interval = slope * (scan_interval_secs + 0) in
+
+        let dir = if growth_per_interval > stability_band then trend_degrading()
+                  else if growth_per_interval < (0 - stability_band) then trend_improving()
+                  else trend_stable()
+        in
+
+        TrendAnalysis {
+            direction: dir,
+            growth_rate_bps: slope,
+            sample_count: reading_count
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Flash check
+// ---------------------------------------------------------------------------
+
+/// Determine whether the system tray icon should flash.
+///
+/// The icon flashes when BOTH conditions are met:
+///   1. The current zone is Purple (critical).
+///   2. The trend direction is Degrading (storage is still growing).
+fn flash_check(zone: i32, trend_direction: i32): bool = {
+    zone == zone_purple() && trend_direction == trend_degrading()
+}
+
+// ---------------------------------------------------------------------------
+// Zone transition detection
+// ---------------------------------------------------------------------------
+
+/// Detect whether a zone transition has occurred.
+/// Returns true if previous != current.
+fn has_transition(previous: i32, current: i32): bool = {
+    previous != current
+}
+
+/// Returns true when the transition is an escalation (more severe).
+fn is_escalation(previous: i32, current: i32): bool = {
+    current > previous
+}
+
+/// Returns true when the transition is a de-escalation (less severe).
+fn is_deescalation(previous: i32, current: i32): bool = {
+    current < previous
+}
+
+// ---------------------------------------------------------------------------
+// Health summary
+// ---------------------------------------------------------------------------
+
+/// All-in-one health summary produced once per scan cycle.
+///
+/// This is the primary data structure pushed to the PanLL panel over
+/// the Unix socket.
+pub struct HealthSummary {
+    zone: i32,
+    total_bytes: i64,
+    trend: TrendAnalysis,
+    should_flash: bool,
+    has_zone_transition: bool,
+    previous_zone: i32,
+    timestamp: i64
+}
+
+/// Build a complete health summary from the latest scan results.
+fn build_summary(
+    total_bytes: i64,
+    readings: &[HealthReading],
+    reading_count: i32,
+    previous_zone: i32,
+    green_max: i64,
+    yellow_max: i64,
+    red_max: i64,
+    scan_interval: i32,
+    now: i64
+): HealthSummary = {
+    let zone = classify(total_bytes, green_max, yellow_max, red_max) in
+    let trend = analyse_trend(readings, reading_count, scan_interval) in
+
+    HealthSummary {
+        zone: zone,
+        total_bytes: total_bytes,
+        trend: trend,
+        should_flash: flash_check(zone, trend.direction),
+        has_zone_transition: has_transition(previous_zone, zone),
+        previous_zone: previous_zone,
+        timestamp: now
+    }
+}

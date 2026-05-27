@@ -1,0 +1,252 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+// =============================================================================
+// session-sentinel :: src/core/providers.eph
+// =============================================================================
+// AI provider detection and registration.
+//
+// Rewritten from AffineScript to Ephapax. Provider detection probes
+// the filesystem with linear directory handles — each probe is
+// a self-contained scope that opens, checks, and closes.
+//
+// Status: WIP — Ephapax rewrite in progress.
+// =============================================================================
+
+use std::io;
+
+// ---------------------------------------------------------------------------
+// Provider type tags
+// ---------------------------------------------------------------------------
+
+/// Determines how storage is scanned for a given AI tool.
+fn provider_claude(): i32 = 0    // JSONL conversations, subagent dirs
+fn provider_ollama(): i32 = 1    // Large model blobs
+fn provider_generic(): i32 = 2   // Flat directory size scan
+fn provider_custom(): i32 = 3    // User-defined
+
+// ---------------------------------------------------------------------------
+// Provider template
+// ---------------------------------------------------------------------------
+
+/// Describes a known AI provider's storage layout.
+pub struct ProviderTemplate {
+    name: String@r,
+    provider_type: i32,
+    detection_path: String@r,
+    storage_path: String@r,
+    default_stale_days: i32,
+    default_scan_interval: i32,  // -1 means None
+    default_auto_heal: bool,
+    weight: i32,                 // x100 (100 = 1.0, 10 = 0.1)
+    description: String@r
+}
+
+// ---------------------------------------------------------------------------
+// Built-in provider templates
+// ---------------------------------------------------------------------------
+
+/// Claude Code — primary target of session-sentinel.
+fn claude_template(): ProviderTemplate = {
+    region r {
+        ProviderTemplate {
+            name: String.new@r("Claude"),
+            provider_type: provider_claude(),
+            detection_path: String.new@r(".claude/"),
+            storage_path: String.new@r(".claude/"),
+            default_stale_days: 7,
+            default_scan_interval: -1,
+            default_auto_heal: true,
+            weight: 100,
+            description: String.new@r("Claude Code conversations, subagent dirs, session metadata")
+        }
+    }
+}
+
+/// GitHub Copilot.
+fn copilot_template(): ProviderTemplate = {
+    region r {
+        ProviderTemplate {
+            name: String.new@r("Copilot"),
+            provider_type: provider_generic(),
+            detection_path: String.new@r(".config/github-copilot/"),
+            storage_path: String.new@r(".config/github-copilot/"),
+            default_stale_days: 14,
+            default_scan_interval: -1,
+            default_auto_heal: true,
+            weight: 100,
+            description: String.new@r("GitHub Copilot config cache and completion telemetry")
+        }
+    }
+}
+
+/// Ollama — local LLM model server.
+fn ollama_template(): ProviderTemplate = {
+    region r {
+        ProviderTemplate {
+            name: String.new@r("Ollama"),
+            provider_type: provider_ollama(),
+            detection_path: String.new@r(".ollama/"),
+            storage_path: String.new@r(".ollama/"),
+            default_stale_days: 30,
+            default_scan_interval: 300,
+            default_auto_heal: false,
+            weight: 10,
+            description: String.new@r("Ollama model blobs, manifests, inference logs")
+        }
+    }
+}
+
+/// LM Studio.
+fn lmstudio_template(): ProviderTemplate = {
+    region r {
+        ProviderTemplate {
+            name: String.new@r("LM Studio"),
+            provider_type: provider_generic(),
+            detection_path: String.new@r(".cache/lm-studio/"),
+            storage_path: String.new@r(".cache/lm-studio/"),
+            default_stale_days: 30,
+            default_scan_interval: 300,
+            default_auto_heal: false,
+            weight: 50,
+            description: String.new@r("LM Studio model cache, user data, inference scratch")
+        }
+    }
+}
+
+/// Continue.dev.
+fn continue_template(): ProviderTemplate = {
+    region r {
+        ProviderTemplate {
+            name: String.new@r("Continue"),
+            provider_type: provider_generic(),
+            detection_path: String.new@r(".continue/"),
+            storage_path: String.new@r(".continue/"),
+            default_stale_days: 14,
+            default_scan_interval: -1,
+            default_auto_heal: true,
+            weight: 100,
+            description: String.new@r("Continue.dev session transcripts, index, telemetry")
+        }
+    }
+}
+
+/// Cursor.
+fn cursor_template(): ProviderTemplate = {
+    region r {
+        ProviderTemplate {
+            name: String.new@r("Cursor"),
+            provider_type: provider_generic(),
+            detection_path: String.new@r(".cursor/"),
+            storage_path: String.new@r(".cursor/"),
+            default_stale_days: 14,
+            default_scan_interval: -1,
+            default_auto_heal: true,
+            weight: 100,
+            description: String.new@r("Cursor editor extensions, caches, logs")
+        }
+    }
+}
+
+/// Aider.
+fn aider_template(): ProviderTemplate = {
+    region r {
+        ProviderTemplate {
+            name: String.new@r("Aider"),
+            provider_type: provider_generic(),
+            detection_path: String.new@r(".aider/"),
+            storage_path: String.new@r(".aider/"),
+            default_stale_days: 7,
+            default_scan_interval: -1,
+            default_auto_heal: true,
+            weight: 100,
+            description: String.new@r("Aider LLM response cache, ctags index, conversation history")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Detection
+// ---------------------------------------------------------------------------
+
+/// Check whether a provider template matches the current filesystem.
+///
+/// KEY EPHAPAX CHANGE: Directory probe uses linear handle.
+/// Open, check existence, close — all in one scope. The old
+/// AffineScript version could leave stat handles open across
+/// the entire provider detection loop.
+fn is_provider_present(home: &String@r, template: &ProviderTemplate): bool = {
+    region r {
+        let full_path = String.concat@r(home, &template.detection_path) in
+        // Linear probe handle
+        let! probe = io::Dir.try_open(&full_path) in
+        let exists = io::Dir.is_valid(&probe) in
+        drop(probe);  // Explicit close — cannot leak
+        drop(full_path);
+        exists
+    }
+}
+
+/// Auto-detect which AI tools are installed.
+///
+/// Returns count of detected providers. Detected configs are written
+/// into the output array.
+fn detect_providers(home: &String@r): i32 = {
+    let mut detected: i32 = 0;
+
+    // Check each template with linear probes
+    let t_claude = claude_template() in
+    if is_provider_present(home, &t_claude) then
+        detected = detected + 1
+    else ();
+
+    let t_copilot = copilot_template() in
+    if is_provider_present(home, &t_copilot) then
+        detected = detected + 1
+    else ();
+
+    let t_ollama = ollama_template() in
+    if is_provider_present(home, &t_ollama) then
+        detected = detected + 1
+    else ();
+
+    let t_lmstudio = lmstudio_template() in
+    if is_provider_present(home, &t_lmstudio) then
+        detected = detected + 1
+    else ();
+
+    let t_continue = continue_template() in
+    if is_provider_present(home, &t_continue) then
+        detected = detected + 1
+    else ();
+
+    let t_cursor = cursor_template() in
+    if is_provider_present(home, &t_cursor) then
+        detected = detected + 1
+    else ();
+
+    let t_aider = aider_template() in
+    if is_provider_present(home, &t_aider) then
+        detected = detected + 1
+    else ();
+
+    detected
+}
+
+// ---------------------------------------------------------------------------
+// Process detection
+// ---------------------------------------------------------------------------
+
+/// Map provider names to process names for active session detection.
+fn process_pattern_for(provider_type: i32): String@r = {
+    region r {
+        if provider_type == 0 then String.new@r("claude")
+        else if provider_type == 1 then String.new@r("ollama")
+        else String.new@r("")
+    }
+}
+
+/// Check if detailed scanning is supported for this provider type.
+fn supports_detailed_scan(provider_type: i32): bool = {
+    provider_type == provider_claude()
+}

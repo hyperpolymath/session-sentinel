@@ -1,0 +1,263 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+// =============================================================================
+// session-sentinel :: src/core/diagnostics.eph
+// =============================================================================
+// Self-diagnostics system.
+//
+// Rewritten from AffineScript to Ephapax. Key change: the diagnostic log's
+// file handle is linear (let!) ensuring the log file is always properly
+// flushed and closed, even when the watchdog kills the process.
+//
+// Status: WIP — Ephapax rewrite in progress.
+// =============================================================================
+
+use std::io;
+
+// ---------------------------------------------------------------------------
+// Diagnostic entry
+// ---------------------------------------------------------------------------
+
+/// Category tags for diagnostic entries.
+/// Used for filtering in the PanLL panel and for routing notifications.
+fn cat_storage(): i32 = 0
+fn cat_process(): i32 = 1
+fn cat_health(): i32 = 2
+fn cat_healing(): i32 = 3
+fn cat_error(): i32 = 4
+
+/// Severity levels.
+fn sev_info(): i32 = 0
+fn sev_warning(): i32 = 1
+fn sev_critical(): i32 = 2
+
+/// A single diagnostic entry.
+/// Immutable once created. Stored in the ring buffer and optionally
+/// persisted to the log file.
+pub struct DiagnosticEntry {
+    timestamp: i64,
+    category: i32,
+    severity: i32,
+    message: String@r
+}
+
+/// Format a diagnostic entry as a single log line.
+/// Format: [TIMESTAMP] [SEVERITY] [CATEGORY] message
+fn format_entry(entry: &DiagnosticEntry): String@r = {
+    region r {
+        let sev_str = if entry.severity == 0 then "INFO"
+                      else if entry.severity == 1 then "WARN"
+                      else "CRIT"
+        in
+        let cat_str = if entry.category == 0 then "STORAGE"
+                      else if entry.category == 1 then "PROCESS"
+                      else if entry.category == 2 then "HEALTH"
+                      else if entry.category == 3 then "HEALING"
+                      else "ERROR"
+        in
+        // TODO: format! equivalent in Ephapax
+        String.new@r("[TIMESTAMP] [SEV] [CAT] message")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ring buffer
+// ---------------------------------------------------------------------------
+
+/// Maximum number of entries retained in memory.
+/// 1000 entries at ~200 bytes each is ~200 KB — negligible.
+fn max_entries(): i32 = 1000
+
+/// Bounded ring buffer of diagnostic entries.
+///
+/// When the buffer is full, the oldest entry is evicted.
+pub struct DiagnosticLog {
+    entries: [DiagnosticEntry],
+    write_pos: i32,
+    count: i32,
+    log_file_path: String@r
+}
+
+/// Create a new empty diagnostic log.
+fn new_log(log_file_path: String@r): DiagnosticLog = {
+    DiagnosticLog {
+        entries: [],
+        write_pos: 0,
+        count: 0,
+        log_file_path: log_file_path
+    }
+}
+
+/// Append a diagnostic entry to the ring buffer.
+///
+/// KEY EPHAPAX CHANGE: File handle for append is linear (let!).
+/// The old AffineScript version used best-effort append with implicit
+/// drop on the file handle. In Ephapax, the file handle must be
+/// explicitly consumed, ensuring the write is flushed before
+/// proceeding. This prevents log corruption on watchdog kill.
+fn push_entry(log: &mut DiagnosticLog, entry: DiagnosticEntry): () = {
+    region r {
+        // Persist to file — linear handle ensures flush.
+        let! file_handle = io::File.open_append@r(&log.log_file_path) in
+        let line = format_entry(&entry) in
+        let _ = io::File.write_line(&file_handle, &line) in
+        drop(file_handle);  // Explicit close — cannot be forgotten
+        drop(line);
+
+        // Append to ring buffer (simplified — full ring buffer TBD).
+        log.count = log.count + 1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Convenience logging functions
+// ---------------------------------------------------------------------------
+
+/// Log an informational entry.
+fn log_info(log: &mut DiagnosticLog, category: i32, message: String@r, now: i64): () = {
+    let entry = DiagnosticEntry {
+        timestamp: now,
+        category: category,
+        severity: sev_info(),
+        message: message
+    } in
+    push_entry(log, entry)
+}
+
+/// Log a warning entry.
+fn log_warning(log: &mut DiagnosticLog, category: i32, message: String@r, now: i64): () = {
+    let entry = DiagnosticEntry {
+        timestamp: now,
+        category: category,
+        severity: sev_warning(),
+        message: message
+    } in
+    push_entry(log, entry)
+}
+
+/// Log a critical entry.
+fn log_critical(log: &mut DiagnosticLog, category: i32, message: String@r, now: i64): () = {
+    let entry = DiagnosticEntry {
+        timestamp: now,
+        category: category,
+        severity: sev_critical(),
+        message: message
+    } in
+    push_entry(log, entry)
+}
+
+// ---------------------------------------------------------------------------
+// Watchdog
+// ---------------------------------------------------------------------------
+
+/// Watchdog state — tracks the last successful scan to detect hangs.
+///
+/// If more than 2 * expected_interval_secs have elapsed since the last
+/// successful scan, the watchdog fires a critical diagnostic.
+pub struct Watchdog {
+    last_successful_scan: i64,   // -1 means None
+    expected_interval_secs: i32,
+    consecutive_alerts: i32
+}
+
+/// Create a new watchdog with no scan history.
+fn new_watchdog(expected_interval: i32): Watchdog = {
+    Watchdog {
+        last_successful_scan: -1,
+        expected_interval_secs: expected_interval,
+        consecutive_alerts: 0
+    }
+}
+
+/// Record a successful scan, resetting the watchdog timer.
+fn watchdog_ping(wd: &mut Watchdog, now: i64): () = {
+    wd.last_successful_scan = now;
+    wd.consecutive_alerts = 0;
+}
+
+/// Check the watchdog and fire an alert if the scan is overdue.
+/// Returns true if an alert was fired.
+fn watchdog_check(wd: &mut Watchdog, log: &mut DiagnosticLog, now: i64): bool = {
+    let deadline = wd.expected_interval_secs * 2 in
+
+    if wd.last_successful_scan < 0 then
+        // No scan has ever completed — give startup time.
+        false
+    else {
+        let elapsed = if now > wd.last_successful_scan then
+            now - wd.last_successful_scan
+        else
+            0
+        in
+
+        if elapsed > deadline then {
+            wd.consecutive_alerts = wd.consecutive_alerts + 1;
+            region r {
+                log_critical(log, cat_health(),
+                    String.new@r("Watchdog: scan overdue"), now);
+            }
+            true
+        } else
+            false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Full system diagnostics
+// ---------------------------------------------------------------------------
+
+/// Disk space threshold: warn when a filesystem is more than 90% full.
+fn disk_warn_percent(): i32 = 90
+
+/// Memory pressure threshold: warn when available memory is below 10%.
+fn memory_warn_percent(): i32 = 10
+
+/// Swap usage threshold: warn when swap exceeds 50%.
+fn swap_warn_percent(): i32 = 50
+
+/// Run a complete self-diagnostic check.
+///
+/// Examines:
+///   1. Disk space on critical mount points.
+///   2. Memory and swap pressure.
+///   3. Orphan AI processes.
+///   4. Storage growth rate.
+///   5. Healer effectiveness.
+///   6. Watchdog status.
+///
+/// KEY EPHAPAX CHANGE: All file system stat handles are linear (let!),
+/// ensuring they are released before the next stat call. The old
+/// AffineScript version accumulated open handles across the loop
+/// iterations, contributing to file descriptor exhaustion under high
+/// scan frequency.
+fn run_diagnostics(
+    log: &mut DiagnosticLog,
+    wd: &mut Watchdog,
+    readings: &[HealthReading],
+    reading_count: i32,
+    heal_bytes_last_hour: i64,
+    now: i64
+): () = {
+    // 1. Disk space checks — linear handles per mount point
+    // TODO: iterate critical mounts with let! stat handles
+
+    // 2. Memory and swap pressure
+    // TODO: system memory queries via Zig FFI
+
+    // 3. Orphan AI processes
+    // TODO: process list scan via Zig FFI
+
+    // 4. Storage growth rate
+    if reading_count >= 2 then {
+        // TODO: compute growth rate from readings
+        ()
+    } else ();
+
+    // 5. Healer effectiveness
+    // TODO: compare heal_bytes_last_hour against growth rate
+
+    // 6. Watchdog check
+    let _ = watchdog_check(wd, log, now) in
+    ()
+}
