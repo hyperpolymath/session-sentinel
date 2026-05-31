@@ -1,0 +1,426 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+//
+// Session Sentinel — Structural Validation Test Suite (AffineScript port).
+//
+// Step 2 of the estate-wide TypeScript → AffineScript migration campaign
+// (hyperpolymath/standards#239 umbrella, #241 TAIL BATCH 1).
+//
+// This is a container/infrastructure repo with no compiled source code.
+// CRG Grade C for this repo category means validating structural
+// invariants: required files exist, configuration is syntactically valid,
+// placeholders are resolved, security fields are present, and no secrets
+// leak.
+//
+// Test categories (mirrored from validate.test.ts):
+//   UNIT       — individual file existence checks
+//   SMOKE      — basic content sanity (non-empty)
+//   P2P        — property: all TOML files are readable + non-empty
+//   E2E        — chain: discovery → content check → field validation
+//   CONTRACT   — required fields in each config file
+//   ASPECT     — no secrets or placeholders in config files
+//   BENCHMARK  — directory scan timing
+//
+// Compared to the .ts source this port substitutes a regex/string-based
+// field check for `parse as TOML` because AffineScript has no TOML
+// parser binding today (gap noted in PR). Each contract assertion checks
+// for the same `field = ` pattern the upstream test verified post-parse,
+// so coverage is equivalent for the field-presence + placeholder-leak
+// invariants this suite protects.
+
+use Deno::{
+  readTextFile, walkRecursive, consoleError,
+  regexMatch, statSize, pathJoin, dateNow
+};
+
+// `string::ends_with` is not `pub` in the stdlib today, so inline a
+// `string_sub`-backed equivalent (the merged check-ts-allowlist seed's
+// defensive pattern, restored here).
+fn ends_with(s: String, suffix: String) -> Bool {
+  let slen = len(s);
+  let sfxlen = len(suffix);
+  if sfxlen > slen { false }
+  else { string_sub(s, slen - sfxlen, sfxlen) == suffix }
+}
+
+// ── Test infrastructure ─────────────────────────────────────────────
+//
+// Each `pub fn test_*() -> Bool` is exported so a future harness (the
+// affinescript-deno-test convention) can wrap it as `Deno.test()`. For
+// this port we additionally provide a `pub fn main()` which iterates
+// the test list, reports per-test outcome, and exits non-zero on any
+// failure — matching the shape `deno test` would produce while keeping
+// the file directly runnable via `deno run --allow-read`.
+
+// Repository root, resolved as the parent of this test file's directory.
+// `tests/` lives one level under the repo root.
+fn repo_root() -> String {
+  // The compiled .deno.js runs from the repo root via `deno test` /
+  // `deno run tests/validate.test.deno.js`. Both invocations set the
+  // cwd to the repo root, so a "." prefix resolves to the repo.
+  "."
+}
+
+// ── helpers ────────────────────────────────────────────────────────
+
+fn join2(a: String, b: String) -> String {
+  pathJoin(a, b)
+}
+
+fn join3(a: String, b: String, c: String) -> String {
+  pathJoin(pathJoin(a, b), c)
+}
+
+// File-exists check: `Deno.statSync(path).size` throws on missing file;
+// the call returns >= 0 when the entry exists and is reachable. We pair
+// this with a `readTextFile` for the content-bearing assertions because
+// a directory's `.size` is platform-specific.
+fn file_exists(path: String) -> Bool {
+  let _ = statSize(path);
+  true
+}
+
+fn file_non_empty(path: String) -> Bool {
+  let content = readTextFile(path);
+  len(content) > 0
+}
+
+fn read_file(path: String) -> String {
+  readTextFile(path)
+}
+
+// Substring containment via the host `String.indexOf` (>= 0 = found).
+fn contains(haystack: String, needle: String) -> Bool {
+  string_find(haystack, needle) >= 0
+}
+
+// `String.includes`-shaped helper used by the contract / aspect arms.
+fn includes(s: String, sub: String) -> Bool {
+  contains(s, sub)
+}
+
+// ── UNIT: required files exist ──────────────────────────────────────
+
+pub fn test_unit_readme_exists() -> Bool {
+  file_exists(join2(repo_root(), "README.adoc"))
+}
+
+pub fn test_unit_license_exists() -> Bool {
+  file_exists(join2(repo_root(), "LICENSE"))
+}
+
+pub fn test_unit_containerfile_exists() -> Bool {
+  file_exists(join2(repo_root(), "Containerfile"))
+}
+
+pub fn test_unit_sentinel_config_exists() -> Bool {
+  file_exists(join3(repo_root(), "config", "session-sentinel.toml"))
+}
+
+pub fn test_unit_manifest_exists() -> Bool {
+  file_exists(join3(repo_root(), "container", "manifest.toml"))
+}
+
+pub fn test_unit_security_txt_exists() -> Bool {
+  file_exists(join3(repo_root(), ".well-known", "security.txt"))
+}
+
+// ── UNIT: required directories exist ────────────────────────────────
+//
+// AffineScript's Deno bindings expose `statSize` (file bytes); a
+// directory call succeeds on every supported platform — its size is
+// platform-defined but the call itself does not throw, which is the
+// existence signal we need. We also assert that the directory contains
+// at least one expected child so a stray file with the same name
+// doesn't satisfy the test.
+
+pub fn test_unit_config_dir_exists() -> Bool {
+  let _ = file_exists(join2(repo_root(), "config"));
+  file_exists(join3(repo_root(), "config", "session-sentinel.toml"))
+}
+
+pub fn test_unit_container_dir_exists() -> Bool {
+  let _ = file_exists(join2(repo_root(), "container"));
+  file_exists(join3(repo_root(), "container", "manifest.toml"))
+}
+
+pub fn test_unit_docs_dir_exists() -> Bool {
+  file_exists(join2(repo_root(), "docs"))
+}
+
+// ── SMOKE: files have non-zero content ──────────────────────────────
+
+pub fn test_smoke_readme_nonempty() -> Bool {
+  file_non_empty(join2(repo_root(), "README.adoc"))
+}
+
+pub fn test_smoke_license_nonempty() -> Bool {
+  file_non_empty(join2(repo_root(), "LICENSE"))
+}
+
+pub fn test_smoke_sentinel_config_nonempty() -> Bool {
+  file_non_empty(join3(repo_root(), "config", "session-sentinel.toml"))
+}
+
+// ── P2P: every .toml file is readable and non-empty ─────────────────
+//
+// AffineScript has no `parse as TOML` extern, so this property
+// substitutes a "readable + non-empty + recognisable shape" check.
+// Every TOML file must contain at least one `[section]` header or
+// `key =` assignment line, which excludes accidental empty/binary
+// drops without depending on a full parser.
+
+fn looks_like_toml(content: String) -> Bool {
+  // Either a section header `[name]` or an assignment `key = value`.
+  regexMatch(content, "(^|\\n)\\s*\\[[A-Za-z_][A-Za-z0-9_.-]*\\]") ||
+  regexMatch(content, "(^|\\n)\\s*[A-Za-z_][A-Za-z0-9_-]*\\s*=")
+}
+
+fn collect_toml_files(root: String) -> [String] {
+  let mut out = [];
+  let all = walkRecursive(root);
+  let mut i = 0;
+  let n = len(all);
+  while i < n {
+    let f = all[i];
+    if ends_with(f, ".toml") {
+      // Skip anything under a `.git*` segment so the .git index TOML
+      // pseudo-files (or vendored archives) don't pollute the run.
+      let mut skip = false;
+      if regexMatch(f, "/\\.git") { skip = true; }
+      if !skip { out = out ++ [f]; }
+    }
+    i = i + 1;
+  }
+  out
+}
+
+pub fn test_p2p_all_toml_files_well_shaped() -> Bool {
+  let files = collect_toml_files(repo_root());
+  if len(files) == 0 { return false; }
+  let mut i = 0;
+  let n = len(files);
+  while i < n {
+    let f = files[i];
+    let content = readTextFile(f);
+    if len(content) == 0 { return false; }
+    if !looks_like_toml(content) {
+      let _ = consoleError("p2p: malformed TOML shape: " ++ f);
+      return false;
+    }
+    i = i + 1;
+  }
+  true
+}
+
+// ── E2E: file discovery → content read → field validation ───────────
+
+pub fn test_e2e_sentinel_config_chain() -> Bool {
+  // Stage 1: discoverable
+  let path = join3(repo_root(), "config", "session-sentinel.toml");
+  if !file_exists(path) { return false; }
+  // Stage 2: readable
+  let content = read_file(path);
+  if len(content) == 0 { return false; }
+  // Stage 3: TOML-shaped (top-level [sentinel] section)
+  if !regexMatch(content, "(^|\\n)\\s*\\[sentinel\\]") { return false; }
+  // Stage 4: contract field present
+  if !regexMatch(content, "(^|\\n)\\s*scan_interval\\s*=") { return false; }
+  true
+}
+
+pub fn test_e2e_manifest_chain() -> Bool {
+  // Stage 1: discoverable
+  let path = join3(repo_root(), "container", "manifest.toml");
+  if !file_exists(path) { return false; }
+  // Stage 2: readable
+  let content = read_file(path);
+  if len(content) == 0 { return false; }
+  // Stage 3: required [metadata] section + fields
+  if !regexMatch(content, "(^|\\n)\\s*\\[metadata\\]") { return false; }
+  if !regexMatch(content, "(^|\\n)\\s*name\\s*=") { return false; }
+  if !regexMatch(content, "(^|\\n)\\s*version\\s*=") { return false; }
+  if !regexMatch(content, "(^|\\n)\\s*license\\s*=") { return false; }
+  // Stage 4: license correctness — must be MPL-2.0
+  regexMatch(content, "license\\s*=\\s*\"MPL-2\\.0\"")
+}
+
+// ── CONTRACT: required fields in each config file ──────────────────
+
+pub fn test_contract_sentinel_required_fields() -> Bool {
+  let content = read_file(join3(repo_root(), "config", "session-sentinel.toml"));
+  if !regexMatch(content, "(^|\\n)\\s*\\[sentinel\\]") { return false; }
+  if !regexMatch(content, "(^|\\n)\\s*scan_interval\\s*=") { return false; }
+  if !regexMatch(content, "(^|\\n)\\s*enable_self_healing\\s*=") { return false; }
+  regexMatch(content, "(^|\\n)\\s*log_path\\s*=")
+}
+
+pub fn test_contract_security_txt_rfc9116_fields() -> Bool {
+  let content = read_file(join3(repo_root(), ".well-known", "security.txt"));
+  if !includes(content, "Contact:") { return false; }
+  if !includes(content, "Expires:") { return false; }
+  includes(content, "Preferred-Languages:")
+}
+
+pub fn test_contract_manifest_security_section() -> Bool {
+  let content = read_file(join3(repo_root(), "container", "manifest.toml"));
+  if !regexMatch(content, "(^|\\n)\\s*\\[security\\]") { return false; }
+  if !regexMatch(content, "(^|\\n)\\s*user\\s*=") { return false; }
+  regexMatch(content, "(^|\\n)\\s*no_new_privileges\\s*=")
+}
+
+// ── ASPECT: no secrets / placeholders in config files ──────────────
+//
+// Scans for secret-shaped patterns. Mirrors the TS predicate set but
+// implemented as case-insensitive AffineScript `regexMatch`. The
+// emitted JS uses `new RegExp(pat).test(str)`, so JS-flavour regex
+// syntax (`[a-z]`, alternation, anchors, `\s`, `\d`) is portable. We
+// embed `(?i)` per-pattern by listing both case variants in a single
+// alternation rather than relying on inline flags, which is portable
+// across regex flavours.
+
+fn contains_secret_pattern(content: String) -> Bool {
+  // api_key / apikey / api-key = "<>= 8 chars>"
+  if regexMatch(content, "[Aa][Pp][Ii][-_]?[Kk][Ee][Yy]\\s*=\\s*[\"'][^\"']{8,}[\"']") {
+    return true;
+  }
+  // password / passwd / pwd = "<>= 4 chars>"
+  if regexMatch(content, "(password|passwd|pwd|PASSWORD|PASSWD|PWD)\\s*=\\s*[\"'][^\"']{4,}[\"']") {
+    return true;
+  }
+  // secret / token = "<base64-ish 20+ chars>"
+  if regexMatch(content, "(secret|token|SECRET|TOKEN)\\s*=\\s*[\"'][A-Za-z0-9+/]{20,}[\"']") {
+    return true;
+  }
+  // PEM private key block
+  if regexMatch(content, "-----BEGIN (RSA |EC )?PRIVATE KEY-----") {
+    return true;
+  }
+  // Cloud-provider env-style secrets
+  if regexMatch(content, "(AWS|AZURE|GCP)_(SECRET|KEY|TOKEN)\\s*=") {
+    return true;
+  }
+  // Long hex secrets (32+ chars) keyed by secret/key/token
+  if regexMatch(content, "(secret|key|token|SECRET|KEY|TOKEN)\\s*=\\s*[\"'][0-9a-fA-F]{32,}[\"']") {
+    return true;
+  }
+  false
+}
+
+pub fn test_aspect_no_secrets_in_sentinel_toml() -> Bool {
+  let content = read_file(join3(repo_root(), "config", "session-sentinel.toml"));
+  !contains_secret_pattern(content)
+}
+
+pub fn test_aspect_no_secrets_in_container_tomls() -> Bool {
+  let container_dir = join2(repo_root(), "container");
+  let all = walkRecursive(container_dir);
+  let mut i = 0;
+  let n = len(all);
+  while i < n {
+    let f = all[i];
+    if ends_with(f, ".toml") {
+      let content = readTextFile(f);
+      if contains_secret_pattern(content) {
+        let _ = consoleError("aspect: secret pattern in " ++ f);
+        return false;
+      }
+    }
+    i = i + 1;
+  }
+  true
+}
+
+pub fn test_aspect_critical_fields_not_placeholders() -> Bool {
+  let content = read_file(join3(repo_root(), "container", "manifest.toml"));
+  // name / version / license must not be raw `{{...}}` placeholders.
+  if regexMatch(content, "(^|\\n)\\s*name\\s*=\\s*[\"'][^\"']*\\{\\{") { return false; }
+  if regexMatch(content, "(^|\\n)\\s*version\\s*=\\s*[\"'][^\"']*\\{\\{") { return false; }
+  if regexMatch(content, "(^|\\n)\\s*license\\s*=\\s*[\"'][^\"']*\\{\\{") { return false; }
+  true
+}
+
+// ── BENCHMARK: full repo TOML scan ──────────────────────────────────
+//
+// AffineScript's only host-clock extern on the Deno-ESM backend is
+// `dateNow()` (millis-since-epoch as Int) — fine-grained enough for a
+// 2s budget. We require both that the scan completes under budget AND
+// that it found at least one TOML file (so a silently-broken
+// walkRecursive doesn't trivially "pass").
+
+pub fn test_benchmark_toml_scan_under_2s() -> Bool {
+  let start = dateNow();
+  let files = collect_toml_files(repo_root());
+  let mut i = 0;
+  let n = len(files);
+  while i < n {
+    let _ = readTextFile(files[i]);
+    i = i + 1;
+  }
+  let elapsed = dateNow() - start;
+  if len(files) == 0 { return false; }
+  let _ = consoleError(
+    "  benchmark: scanned " ++ int_to_string(len(files)) ++
+    " TOML files in " ++ int_to_string(elapsed) ++ "ms"
+  );
+  elapsed < 2000
+}
+
+// ── Driver ──────────────────────────────────────────────────────────
+//
+// Iterates the named test list, prints a tap-ish per-test line, and
+// exits 0 on all-pass / 1 on any-fail. Each test runs inside its own
+// helper invocation; an uncaught `panic`/throw from `statSize` on a
+// missing file bubbles to the runtime as a failed test (the wrapping
+// `try`/`catch` would need an effect-tracked extern surface we do not
+// yet have on this backend — documented as a follow-up).
+
+fn run_one(name: String, ok: Bool) -> Int {
+  if ok {
+    println("  ok " ++ name);
+    return 0;
+  }
+  println("  FAIL " ++ name);
+  return 1;
+}
+
+pub fn main() -> Int {
+  let mut failed = 0;
+  failed = failed + run_one("unit: README.adoc exists", test_unit_readme_exists());
+  failed = failed + run_one("unit: LICENSE exists", test_unit_license_exists());
+  failed = failed + run_one("unit: Containerfile exists", test_unit_containerfile_exists());
+  failed = failed + run_one("unit: config/session-sentinel.toml exists", test_unit_sentinel_config_exists());
+  failed = failed + run_one("unit: container/manifest.toml exists", test_unit_manifest_exists());
+  failed = failed + run_one("unit: .well-known/security.txt exists", test_unit_security_txt_exists());
+  failed = failed + run_one("unit: config/ directory exists", test_unit_config_dir_exists());
+  failed = failed + run_one("unit: container/ directory exists", test_unit_container_dir_exists());
+  failed = failed + run_one("unit: docs/ directory exists", test_unit_docs_dir_exists());
+
+  failed = failed + run_one("smoke: README.adoc is non-empty", test_smoke_readme_nonempty());
+  failed = failed + run_one("smoke: LICENSE is non-empty", test_smoke_license_nonempty());
+  failed = failed + run_one("smoke: config/session-sentinel.toml is non-empty", test_smoke_sentinel_config_nonempty());
+
+  failed = failed + run_one("p2p: all TOML files are well-shaped", test_p2p_all_toml_files_well_shaped());
+
+  failed = failed + run_one("e2e: session-sentinel.toml chain", test_e2e_sentinel_config_chain());
+  failed = failed + run_one("e2e: container manifest chain", test_e2e_manifest_chain());
+
+  failed = failed + run_one("contract: sentinel required fields", test_contract_sentinel_required_fields());
+  failed = failed + run_one("contract: security.txt RFC 9116 fields", test_contract_security_txt_rfc9116_fields());
+  failed = failed + run_one("contract: manifest security section", test_contract_manifest_security_section());
+
+  failed = failed + run_one("aspect: no secrets in sentinel toml", test_aspect_no_secrets_in_sentinel_toml());
+  failed = failed + run_one("aspect: no secrets in container tomls", test_aspect_no_secrets_in_container_tomls());
+  failed = failed + run_one("aspect: critical fields not placeholders", test_aspect_critical_fields_not_placeholders());
+
+  failed = failed + run_one("benchmark: full repo TOML scan < 2s", test_benchmark_toml_scan_under_2s());
+
+  if failed > 0 {
+    println("");
+    println("FAILED: " ++ int_to_string(failed) ++ " test(s)");
+    return 1;
+  }
+  println("");
+  println("OK: all tests passed");
+  return 0;
+}
