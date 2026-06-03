@@ -1,4 +1,10 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 = Session Sentinel
+image:https://img.shields.io/badge/OpenSSF-Best_Practices-green?logo=openssourcesecurity[OpenSSF Best Practices,link="https://www.bestpractices.dev/en/projects/new?repo_url=https://github.com/hyperpolymath/session-sentinel"]
+
+image:https://img.shields.io/badge/License-MPL_2.0-blue.svg[License: MPL-2.0,link="https://opensource.org/licenses/MPL-2.0"]
+
 :toc: preamble
 :icons: font
 
@@ -161,6 +167,6 @@ Signals: `HealthChanged(zone, metrics_json)`, `HealingCompleted(result_json)`
 
 == License
 
-SPDX-License-Identifier: MPL-2.0
+This project is licensed under the Mozilla Public License, v. 2.0. See the `LICENSE` file for details.
 
-See link:LICENSE[LICENSE] and link:docs/legal/[docs/legal/] for details.
+SPDX-License-Identifier: MPL-2.0
