@@ -161,6 +161,6 @@ Signals: `HealthChanged(zone, metrics_json)`, `HealingCompleted(result_json)`
 
 == License
 
-SPDX-License-Identifier: MPL-2.0
+SPDX-License-Identifier: CC-BY-SA-4.0
 
 See link:LICENSE[LICENSE] and link:docs/legal/[docs/legal/] for details.

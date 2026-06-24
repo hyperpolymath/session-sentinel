@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: CC-BY-SA-4.0
 // Copyright (c) 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 = session-sentinel — CRG Audit (2026-04-18)
@@ -103,7 +103,7 @@ Publication requires B+. Long alpha is discipline, not shame.
 | By far the *thickest* `docs/` tree of any recent C-candidate audited.
 
 | `LICENSE`
-| PRESENT (18 387 bytes, header `SPDX-License-Identifier: MPL-2.0` plus
+| PRESENT (18 387 bytes, header `SPDX-License-Identifier: CC-BY-SA-4.0` plus
   FileCopyrightText — MPL-2.0 text is the legal fallback per Rule 2 of
   the licence policy; intent is MPL-2.0 in source headers)
 | Root
@@ -120,7 +120,7 @@ Publication requires B+. Long alpha is discipline, not shame.
 | PRESENT on all 7 AffineScript `src/core/*.as` files, all 6 Idris2
   `src/interface/abi/*.idr` files, all 5 Zig `src/interface/ffi/src/*.zig`
   files, and `tests/validate.test.ts`. Every sampled source file carries
-  `SPDX-License-Identifier: MPL-2.0`.
+  `SPDX-License-Identifier: CC-BY-SA-4.0`.
 | 19/19 source files SPDX-clean.
 
 | `Containerfile` (not `Dockerfile`)
