@@ -166,10 +166,18 @@ jobs:
           git clone https://github.com/hyperpolymath/hypatia.git "$HOME/hypatia" 2>/dev/null || true
           if [ -f "$HOME/hypatia/mix.exs" ]; then
             cd "$HOME/hypatia"
-            if [ ! -f hypatia-v2 ]; then
+            # Do NOT `mv hypatia ../hypatia-v2`: that moves the built escript to
+            # the PARENT dir while this guard tests for it INSIDE $HOME/hypatia,
+            # where it can never appear -- so the guard was always true and the
+            # escript was always absent when `hypatia-cli.sh` ran. The wrapper
+            # then rebuilt mid-scan and wrote mix output to STDOUT, which the
+            # caller has redirected into hypatia-findings.json, so `jq` failed
+            # with "Invalid numeric literal" and the gate reported
+            # "did not produce a valid JSON findings array" on a scan that had
+            # in fact succeeded (37 findings, exit 0).
+            if [ ! -f hypatia ] && [ ! -f hypatia-v2 ]; then
               mix deps.get
               mix escript.build
-              mv hypatia ../hypatia-v2
             fi
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
