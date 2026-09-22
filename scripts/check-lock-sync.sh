@@ -139,7 +139,7 @@ FILENAME == lockfile {
     next
   }
   if (match($0, /^        - '([^']+)'[[:space:]]*$/, m) && cur != "") {
-    lr = ck(m[1]); disp[lr] = m[1]; lock[cur, lr] = 1
+    lr = ck(norm(m[1])); disp[lr] = m[1]; lock[cur, lr] = 1
     lockcount[cur]++
     want[lr] = 1
     wantsrc[lr] = wantsrc[lr] " " cur
