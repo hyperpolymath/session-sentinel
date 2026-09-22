@@ -1,3 +1,4 @@
+K9!
 # SPDX-License-Identifier: MPL-2.0
 # deploy.k9.ncl — Session Sentinel deployment component (Hunt level)
 #
@@ -143,7 +144,7 @@ echo "K9: Rollback complete."
 
 # Export the component
 {
-  pedigree = component_pedigree,
+  pedigree = component_pedigree & { name = "session-sentinel-deploy", version = "0.1.0" },
   deployment = deployment,
   scripts = scripts,
 
