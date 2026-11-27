@@ -3,6 +3,7 @@
 rust = "latest"
 zig = "latest"
 bun = "latest"
+just = "latest"
 
 # Package managers
 cargo = "latest"
@@ -35,7 +36,7 @@ task = "go-task"
 run = "just build"
 
 [tasks.test]
-run = "just test"
+run = "cd src/interface/ffi && zig build test"
 
 [tasks.lint]
 run = "bun install --frozen-lockfile && bunx --no-install --bun prettier --check ."
