@@ -3,7 +3,6 @@
 rust = "latest"
 zig = "latest"
 bun = "latest"
-denojs = "latest"
 
 # Package managers
 cargo = "latest"
@@ -33,10 +32,10 @@ gnu-grep = "latest"
 task = "go-task"
 
 [tasks.build]
-run = "cargo build --release"
+run = "just build"
 
 [tasks.test]
-run = "cargo test"
+run = "just test"
 
 [tasks.lint]
 run = "bun install --frozen-lockfile && bunx --no-install --bun prettier --check ."
