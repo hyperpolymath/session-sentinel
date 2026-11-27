@@ -53,8 +53,8 @@ MAINTENANCE-CHECKLIST.a2ml, or SOFTWARE-DEVELOPMENT-APPROACH.a2ml in the reposit
 
 | Banned              | Use Instead        |
 |---------------------|--------------------|
-| TypeScript          | ReScript           |
-| Node.js / npm / bun | Deno               |
+| TypeScript          | AffineScript       |
+| Node.js / yarn      | Bun first; Deno, pnpm, npm as fallbacks |
 | Go                  | Rust               |
 | Python              | Julia / Rust       |
 

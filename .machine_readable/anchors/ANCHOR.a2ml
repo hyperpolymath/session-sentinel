@@ -35,7 +35,7 @@ owns = [
 
 [implementation-policy]
 allowed = ["Rust", "Idris2", "Zig", "Scheme", "Shell", "Just", "AsciiDoc", "Markdown"]
-forbidden = ["Node.js", "npm"]
+forbidden = ["Node.js", "yarn"]
 
 [golden-path]
 smoke-test-command = [
